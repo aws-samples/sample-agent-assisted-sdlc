@@ -13,12 +13,6 @@ npx cdk ls                           # List stacks
 npm test                             # Jest snapshot tests
 ```
 
-Test scripts (require deployed stacks + AWS credentials):
-```bash
-./test-scripts/claude-code/test-orchestrator-simple.sh <owner/repo>
-./test-scripts/claude-code/test-orchestrator-complex.sh <owner/repo>
-./test-scripts/claude-code/test-security-hooks.sh <owner/repo>
-```
 
 ## Architecture
 

@@ -16,7 +16,8 @@ cdk.context.json
 
 # Security scan reports (internal only)
 security-scans/
-.ash/
+.ash/*
+!.ash/.ash.yaml
 
 # Customer config (contains secrets paths, copied from template)
 sdlc-config.yaml

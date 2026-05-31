@@ -10,14 +10,14 @@ permissions:
 
 jobs:
   ash:
-    uses: awslabs/automated-security-helper/.github/workflows/run-ash-security-scan.yml@v3.0.0
+    uses: awslabs/automated-security-helper/.github/workflows/run-ash-security-scan.yml@v3.5.3
     permissions:
       contents: read
       checks: write
       pull-requests: write
       security-events: write
     with:
-      ash-version: "v3.0.0"
+      ash-version: "v3.5.3"
       collect-sarif-report: true
       post-pr-comment: false
       verbose: true

@@ -42,12 +42,13 @@ jobs:
 
       - name: Install ASH
         if: steps.changed-files.outputs.any_changed == 'true'
-        run: pip install git+https://github.com/awslabs/automated-security-helper.git@v3.1.2
+        run: pip install git+https://github.com/awslabs/automated-security-helper.git@v3.5.3
 
-      - name: Copy changed files to scan directory
+      - name: Copy changed files and config to scan directory
         if: steps.changed-files.outputs.any_changed == 'true'
         run: |
-          mkdir -p /tmp/ash-scan
+          mkdir -p /tmp/ash-scan/.ash
+          cp .ash/.ash.yaml /tmp/ash-scan/.ash/.ash.yaml
           for file in ${{ steps.changed-files.outputs.all_changed_files }}; do
             if [ -f "$file" ]; then
               mkdir -p "/tmp/ash-scan/$(dirname "$file")"
