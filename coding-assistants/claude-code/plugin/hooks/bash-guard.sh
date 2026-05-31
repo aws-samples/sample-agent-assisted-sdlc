@@ -41,8 +41,8 @@ if echo "$COMMAND" | grep -qE 'curl.*@.*http'; then
   exit 2
 fi
 
-# Block writes outside workspace
-if echo "$COMMAND" | grep -qE '>\s*/(?!mnt/workplace|tmp/)'; then
+# Block writes outside workspace (grep -E doesn't support lookahead, so use inverse match)
+if echo "$COMMAND" | grep -qE '>\s*/' && ! echo "$COMMAND" | grep -qE '>\s*/(mnt/workplace|tmp)/'; then
   echo "BLOCKED: Writing to paths outside /mnt/workplace/ is not allowed."
   exit 2
 fi

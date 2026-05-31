@@ -60,7 +60,7 @@ jobs:
         id: ash-scan
         run: |
           cd /tmp/ash-scan
-          ash --mode container 2>&1 | tee /tmp/ash-output.log
+          ash --mode precommit 2>&1 | tee /tmp/ash-output.log
         continue-on-error: true
 
       - name: Build PR comment

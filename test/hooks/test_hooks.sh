@@ -97,12 +97,8 @@ run_test "block curl @ upload" "bash-guard.sh" \
 run_test "allow curl GET" "bash-guard.sh" \
   '{"tool_input":{"command":"curl https://api.github.com/repos"}}' 0
 
-# NOTE: This test exposes a known bug — grep -E doesn't support (?!) lookahead.
-# The redirect guard in bash-guard.sh never actually matches. Tracked for fix.
-# run_test "block write to /root" "bash-guard.sh" \
-#   '{"tool_input":{"command":"cat data >/root/file"}}' 2
-run_test "allow write to /root (known bug: redirect guard uses unsupported regex)" "bash-guard.sh" \
-  '{"tool_input":{"command":"cat data >/root/file"}}' 0
+run_test "block write to /root" "bash-guard.sh" \
+  '{"tool_input":{"command":"cat data > /root/file"}}' 2
 
 run_test "allow write to /mnt/workplace" "bash-guard.sh" \
   '{"tool_input":{"command":"echo data > /mnt/workplace/file"}}' 0
