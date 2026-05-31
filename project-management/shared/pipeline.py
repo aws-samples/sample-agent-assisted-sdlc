@@ -8,11 +8,10 @@ import os
 import urllib.parse
 
 import botocore.session
+import requests
 from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from botocore.eventstream import EventStreamBuffer
-import requests
-
 
 REGION = os.environ.get("AWS_REGION", "us-west-2")
 SERVICE = "bedrock-agentcore"

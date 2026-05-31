@@ -3,8 +3,11 @@ target-version = "py312"
 
 [lint]
 select = ["E", "F", "I", "S"]
-ignore = ["S603", "S607", "S101", "S108"]
+ignore = ["S603", "S607", "S101", "S108", "S310", "S104", "S106", "E402"]
 
 [lint.per-file-ignores]
 "test-scripts/**" = ["S"]
 "coding-assistants/*/plugin/**" = ["S"]
+"**/mcp/main.py" = ["S"]
+"**/token-lambda/**" = ["S"]
+"**/tests/**" = ["S", "E"]

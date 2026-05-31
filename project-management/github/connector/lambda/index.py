@@ -26,9 +26,9 @@ import sys
 # Add shared modules to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
-from assistants import STRATEGIES
 from token import get_token
 
+from assistants import STRATEGIES
 
 ALLOWED_USERS = json.loads(os.environ.get("ALLOWED_USERS", "[]"))
 ALLOWED_REPOS = json.loads(os.environ.get("ALLOWED_REPOS", "[]"))
@@ -80,7 +80,7 @@ def handler(event, context):
 
     session_id = strategy.get_session_id(repo_owner, repo_name, issue_number)
     print(
-        f"[github-setup] assistant={assistant_type} session={session_id} repo={repo_owner}/{repo_name} issue=#{issue_number}"
+        f"[github-setup] assistant={assistant_type} session={session_id} repo={repo_owner}/{repo_name}"
     )
 
     # Step 1: Clone repo first (into /mnt/workplace/gitproject)

@@ -3,9 +3,9 @@
 
 """AgentCore Runtime health server."""
 
+import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-import uvicorn
 
 app = FastAPI()
 

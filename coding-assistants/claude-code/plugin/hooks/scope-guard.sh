@@ -3,7 +3,6 @@
 # Reads project.json for allowed scope. Exit 2 = block, Exit 0 = allow.
 
 INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // empty')
 TOOL_INPUT=$(echo "$INPUT" | jq -r '.tool_input // {}')
 
 PROJECT_FILE="./.dev-claude/project.json"

@@ -3,11 +3,11 @@
 
 """Base class for coding assistant strategies."""
 
-from abc import ABC, abstractmethod
 import base64
 import json
 import os
 import re
+from abc import ABC, abstractmethod
 
 from pipeline import execute_command
 

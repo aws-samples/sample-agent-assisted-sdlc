@@ -16,13 +16,12 @@ import os
 import subprocess
 import threading
 import time
-import urllib.request
 import urllib.error
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import boto3
 import jwt
-
 
 GITHUB_TOKEN = None
 GO_SERVER_URL = "http://127.0.0.1:8082/mcp"

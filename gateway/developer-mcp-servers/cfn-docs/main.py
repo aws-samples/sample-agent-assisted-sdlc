@@ -151,9 +151,9 @@ def validate_cloudformation_template(
 
     Returns JSON { valid, error_count, warning_count, info_count, issues:[...] }.
     """
-    import tempfile
-    import subprocess
     import os
+    import subprocess
+    import tempfile
 
     suffix = ".json" if template_content.lstrip().startswith("{") else ".yaml"
     with tempfile.NamedTemporaryFile("w", suffix=suffix, delete=False) as f:

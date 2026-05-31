@@ -5,8 +5,9 @@
 
 import base64
 
-from assistants.base import AssistantStrategy, _validate_identifier
 from pipeline import execute_command
+
+from assistants.base import AssistantStrategy, _validate_identifier
 
 
 class KiroStrategy(AssistantStrategy):

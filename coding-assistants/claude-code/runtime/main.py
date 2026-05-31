@@ -12,9 +12,9 @@ import socket
 import subprocess
 import time
 
+import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-import uvicorn
 
 COLLECTOR_BIN = "/usr/bin/otelcol-contrib"
 COLLECTOR_CFG = "/app/otel-collector-config.yaml"
