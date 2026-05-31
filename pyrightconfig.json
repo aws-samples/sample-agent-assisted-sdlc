@@ -1,0 +1,14 @@
+{
+  "include": [
+    "project-management/shared",
+    "project-management/github/connector/lambda",
+    "project-management/github/connector/token-lambda"
+  ],
+  "exclude": [
+    "node_modules",
+    "cdk.out",
+    "**/.venv"
+  ],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic"
+}

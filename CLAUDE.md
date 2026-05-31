@@ -98,6 +98,27 @@ gateway.authorizerType: AWS_IAM               # Never use NONE in production
 codingAssistant.maxLifetime: 2400             # Must be < GitHub token expiry (3600)
 ```
 
+## Tests
+
+```bash
+npm test                                              # TypeScript (12 tests): config loading, getAssistantDir
+cd project-management/shared && python3 -m pytest tests/ -v  # Python (29 tests): validation, session ID, clone, workspace
+bash test/hooks/test_hooks.sh                          # Bash hooks (43 tests): all 4 security hooks
+```
+
+**Coverage:**
+- `_validate_identifier`: 14 cases (valid, empty, special chars, path traversal, unicode, injection)
+- `get_session_id`: 6 cases (normal, short/long names, padding, zero, overflow)
+- `clone_repo`/`clone_private_repo`: 6 cases (public, private, token cleanup, validation)
+- `setup_workspace`: 3 cases (base64 encoding, invocation dir)
+- `label-governance.sh`: 7 cases (default/custom prefix, exact match)
+- `bash-guard.sh`: 17 cases (rm, force push, env dumps, exfil, redirects)
+- `secret-guard.sh`: 10 cases (AWS keys, PEM, GitHub/OpenAI/Slack tokens)
+- `scope-guard.sh`: 8 cases (owner/repo/issue/branch validation, fail-closed)
+- Config TypeScript: 12 cases (loadConfig, getAssistantDir, type validation)
+
+**Known bug:** `bash-guard.sh` redirect guard uses `(?!)` negative lookahead unsupported by `grep -E`. The write-outside-workspace check never fires. Tracked for fix.
+
 ## Important Files & Documentation
 
 | File | Purpose |

@@ -1,5 +1,9 @@
 # Agent-Assisted SDLC
 
+[![CI](https://github.com/aws-samples/sample-agent-assisted-sdlc/actions/workflows/ci.yml/badge.svg)](https://github.com/aws-samples/sample-agent-assisted-sdlc/actions/workflows/ci.yml)
+[![ASH Security Scan](https://github.com/aws-samples/sample-agent-assisted-sdlc/actions/workflows/ash-security-scan.yml/badge.svg)](https://github.com/aws-samples/sample-agent-assisted-sdlc/actions/workflows/ash-security-scan.yml)
+[![Secret Scan](https://github.com/aws-samples/sample-agent-assisted-sdlc/actions/workflows/secret-scan.yml/badge.svg)](https://github.com/aws-samples/sample-agent-assisted-sdlc/actions/workflows/secret-scan.yml)
+
 **From issue to pull request, autonomously.**
 
 > [!IMPORTANT]

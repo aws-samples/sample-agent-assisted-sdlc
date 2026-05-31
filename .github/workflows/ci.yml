@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+
+jobs:
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx cdk synth --quiet
+      - run: npm test
+      - run: npm audit --audit-level=high
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install tools
+        run: pip install ruff pyright pytest
+      - name: Ruff lint
+        run: ruff check .
+      - name: Pyright type check
+        run: pyright
+      - name: Validate pip requirements
+        run: |
+          pip install -r project-management/github/connector/lambda/requirements.txt
+          pip install -r project-management/github/connector/token-lambda/requirements.txt
+      - name: Python unit tests
+        run: cd project-management/shared && python -m pytest tests/ -v
+
+  secrets:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --only-verified --diff
+
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: ShellCheck
+        run: find test-scripts coding-assistants/claude-code/plugin/hooks -name "*.sh" | xargs shellcheck --severity=warning
+      - name: Hook functional tests
+        run: bash test/hooks/test_hooks.sh
