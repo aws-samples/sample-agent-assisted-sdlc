@@ -1,5 +1,7 @@
 *.js
 !jest.config.js
+!lib/constructs/**/index.js
+!gateway/gateway-iam-proxy/*.js
 *.d.ts
 node_modules
 
