@@ -45,6 +45,9 @@ global_settings:
     - rule_id: SECRET-BASE64-HIGH-ENTROPY-STRING
       path: "test/hooks/test_hooks.sh"
       reason: "Intentional test fixture - fake token for hook testing."
+    - rule_id: SECRET-GITHUB-TOKEN
+      path: "test/hooks/test_hooks.sh"
+      reason: "Intentional test fixture - verifies secret-guard blocks GitHub tokens."
     - rule_id: SECRET-PRIVATE-KEY
       path: "test/hooks/test_hooks.sh"
       reason: "Intentional test fixture - verifies secret-guard blocks PEM keys."
@@ -57,6 +60,12 @@ global_settings:
     - rule_id: SECRET-PRIVATE-KEY
       path: "test-scripts/claude-code/test-security-hooks.sh"
       reason: "Intentional test fixture - verifies secret-guard blocks PEM keys."
+    - rule_id: SECRET-GITHUB-TOKEN
+      path: "test-scripts/claude-code/test-security-hooks.sh"
+      reason: "Intentional test fixture - verifies secret-guard blocks GitHub tokens."
+    - rule_id: SECRET-BASE64-HIGH-ENTROPY-STRING
+      path: "test-scripts/claude-code/test-security-hooks.sh"
+      reason: "Intentional test fixture - fake token for hook testing."
 fail_on_findings: true
 ash_plugin_modules: []
 external_reports_to_include: []
