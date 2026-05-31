@@ -1,0 +1,39 @@
+version: 2
+
+# Security-only mode: Dependabot won't open PRs for routine version bumps.
+# It only opens PRs when a dependency has a known CVE (via Dependabot security updates).
+# Enable "Dependabot security updates" in repo Settings → Code security.
+
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: "npm"
+    directory: "/gateway/gateway-iam-proxy"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: "pip"
+    directory: "/project-management/github/connector/lambda"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: "pip"
+    directory: "/project-management/github/connector/token-lambda"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 0
+
+# NOTE: uv-managed directories (aws-docs, cfn-docs, claude-code/runtime) are
+# not tracked by Dependabot. Update manually with: uv lock --upgrade
