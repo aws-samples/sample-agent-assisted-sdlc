@@ -1,0 +1,81 @@
+name: agent-assisted-sdlc
+
+# Triggers when the "agent:start" label is added to an issue
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  id-token: write
+  contents: read
+  issues: read
+
+jobs:
+  trigger-pipeline:
+    # Change 'agent' to match your labelPrefix in sdlc-config.yaml
+    if: github.event.label.name == 'agent:start'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Resolve issue details via GraphQL
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          ISSUE_NODE_ID: ${{ github.event.issue.node_id }}
+        run: |
+          set -euo pipefail
+          gh api graphql \
+            -f query='
+              query($id: ID!) {
+                node(id: $id) {
+                  ... on Issue {
+                    number title body
+                    author { login }
+                    repository { name owner { login } url }
+                    comments(first: 100) {
+                      nodes { id body createdAt author { login } }
+                    }
+                  }
+                }
+              }' \
+            -F id="$ISSUE_NODE_ID" > issue.json
+
+          jq --arg triggered_by "${{ github.actor }}" '{
+            repo_owner:     .data.node.repository.owner.login,
+            repo_name:      .data.node.repository.name,
+            repo_url:       .data.node.repository.url,
+            issue_number:   .data.node.number,
+            issue_title:    .data.node.title,
+            issue_body:     .data.node.body,
+            issue_author:   .data.node.author.login,
+            triggered_by:   $triggered_by,
+            issue_comments: .data.node.comments.nodes
+          }' issue.json > payload.json
+
+          echo "::group::Issue payload"
+          cat payload.json
+          echo "::endgroup::"
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.SDLC_PIPELINE_ROLE_ARN }}
+          aws-region: us-west-2
+
+      - name: Start SDLC pipeline
+        env:
+          STATE_MACHINE_ARN: ${{ secrets.SDLC_PIPELINE_STATE_MACHINE_ARN }}
+        run: |
+          EXECUTION_ARN=$(aws stepfunctions start-execution \
+            --state-machine-arn "$STATE_MACHINE_ARN" \
+            --name "issue-${{ github.event.issue.number }}-$(date +%s)" \
+            --input file://payload.json \
+            --query "executionArn" --output text)
+
+          echo "Started execution: $EXECUTION_ARN"
+          echo "execution_arn=$EXECUTION_ARN" >> "$GITHUB_OUTPUT"
+
+      - name: Comment on issue
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh issue comment ${{ github.event.issue.number }} \
+            --body "🤖 **Agent pipeline started.** The coding assistant is working on this issue. A PR will be created when ready."
