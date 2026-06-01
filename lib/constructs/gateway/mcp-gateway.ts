@@ -60,6 +60,19 @@ export class McpGateway extends Construct {
         },
         physicalResourceId: cr.PhysicalResourceId.fromResponse("gatewayId"),
       },
+      onDelete: {
+        service: "bedrock-agentcore-control",
+        action: "deleteGateway",
+        parameters: {
+          gatewayId: new cr.PhysicalResourceIdReference(),
+        },
+        // Waiter Lambda's Delete handler runs first and deletes the gateway,
+        // so this call typically hits an already-deleted gateway. Swallow that.
+        // ValidationException covers rollback cases where targets still exist
+        // (waiter handles target cleanup; this fallback runs only if waiter
+        // never deployed, in which case the orphaned gateway is the bigger fix).
+        ignoreErrorCodesMatching: "ResourceNotFoundException|ValidationException",
+      },
       policy: cr.AwsCustomResourcePolicy.fromStatements([
         new iam.PolicyStatement({
           actions: [
