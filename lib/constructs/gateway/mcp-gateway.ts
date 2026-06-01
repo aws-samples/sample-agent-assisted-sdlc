@@ -60,6 +60,13 @@ export class McpGateway extends Construct {
         },
         physicalResourceId: cr.PhysicalResourceId.fromResponse("gatewayId"),
       },
+      onDelete: {
+        service: "bedrock-agentcore-control",
+        action: "deleteGateway",
+        parameters: {
+          gatewayId: new cr.PhysicalResourceIdReference(),
+        },
+      },
       policy: cr.AwsCustomResourcePolicy.fromStatements([
         new iam.PolicyStatement({
           actions: [
