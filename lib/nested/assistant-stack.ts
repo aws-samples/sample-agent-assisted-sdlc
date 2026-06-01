@@ -110,6 +110,27 @@ export class AssistantStack extends cdk.Stack {
     // Manual sync via CLI: aws bedrock-agentcore-control synchronize-gateway-targets
 
     // Step Functions + Lambdas
+    // Bundle both connector/lambda and shared/ into the Lambda package
+    const lambdaCode = cdk.aws_lambda.Code.fromAsset("./project-management", {
+      bundling: {
+        image: cdk.aws_lambda.Runtime.PYTHON_3_12.bundlingImage,
+        command: ["bash", "-c", "echo unused"],
+        local: {
+          tryBundle(outputDir: string) {
+            const { execSync } = require("child_process");
+            execSync(`cp -r github/connector/lambda/* ${outputDir}/`);
+            execSync(`cp -r shared/assistants ${outputDir}/`);
+            execSync(`cp shared/pipeline.py ${outputDir}/`);
+            execSync(`cp shared/invoke_pipeline.py ${outputDir}/`);
+            if (require("fs").existsSync("github/connector/lambda/requirements.txt")) {
+              execSync(`pip install -r github/connector/lambda/requirements.txt -t ${outputDir}/ --quiet`, { cwd: "." });
+            }
+            return true;
+          },
+        },
+      },
+    });
+
     const setupLambda = new cdk.aws_lambda.Function(this, "SetupLambda", {
       runtime: cdk.aws_lambda.Runtime.PYTHON_3_12,
       handler: "index.handler",
@@ -124,7 +145,7 @@ export class AssistantStack extends cdk.Stack {
         ALLOWED_REPOS: JSON.stringify(config.sourceControl.github?.allowedRepos || []),
         SDLC_LABEL_PREFIX: config.projectManagement.github?.labelPrefix || "agent",
       },
-      code: cdk.aws_lambda.Code.fromAsset("./project-management/github/connector/lambda"),
+      code: lambdaCode,
     });
 
     setupLambda.addToRolePolicy(new iam.PolicyStatement({
@@ -142,7 +163,7 @@ export class AssistantStack extends cdk.Stack {
         ASSISTANT_TYPE: config.codingAssistant.type,
         AWS_REGION_NAME: config.region,
       },
-      code: cdk.aws_lambda.Code.fromAsset("./project-management/github/connector/lambda"),
+      code: lambdaCode,
     });
 
     pipelineLambda.addToRolePolicy(new iam.PolicyStatement({
