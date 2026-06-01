@@ -120,12 +120,23 @@ export class AssistantStack extends cdk.Stack {
         command: ["bash", "-c", "echo unused"],
         local: {
           tryBundle(outputDir: string) {
+            const fs = require("fs");
+            const path = require("path");
             const { execSync } = require("child_process");
-            execSync(`cp -r ${pmDir}/github/connector/lambda/* ${outputDir}/`);
-            execSync(`cp -r ${pmDir}/shared/assistants ${outputDir}/`);
-            execSync(`cp ${pmDir}/shared/pipeline.py ${outputDir}/`);
-            execSync(`cp ${pmDir}/shared/invoke_pipeline.py ${outputDir}/`);
-            execSync(`pip install -r ${pmDir}/github/connector/lambda/requirements.txt -t ${outputDir}/ --quiet --platform manylinux2014_x86_64 --implementation cp --python-version 3.12 --only-binary=:all:`);
+            const lambdaDir = path.join(pmDir, "github/connector/lambda");
+            const sharedDir = path.join(pmDir, "shared");
+
+            // Copy Lambda handler files
+            for (const f of fs.readdirSync(lambdaDir)) {
+              fs.cpSync(path.join(lambdaDir, f), path.join(outputDir, f), { recursive: true });
+            }
+            // Copy shared modules
+            fs.cpSync(path.join(sharedDir, "assistants"), path.join(outputDir, "assistants"), { recursive: true });
+            fs.cpSync(path.join(sharedDir, "pipeline.py"), path.join(outputDir, "pipeline.py"));
+            fs.cpSync(path.join(sharedDir, "invoke_pipeline.py"), path.join(outputDir, "invoke_pipeline.py"));
+            // Install pip dependencies for Lambda target platform
+            const reqFile = path.join(lambdaDir, "requirements.txt");
+            execSync(`pip install -r "${reqFile}" -t "${outputDir}/" --quiet --platform manylinux2014_x86_64 --implementation cp --python-version 3.12 --only-binary=:all:`);
             return true;
           },
         },
