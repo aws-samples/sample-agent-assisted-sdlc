@@ -21,7 +21,9 @@ def _otel_attrs_prefix(session_id: str) -> str:
 class ClaudeStrategy(AssistantStrategy):
     plugin_path = "/mnt/plugins"
 
-    def run_pipeline(self, session_id: str, issue: dict) -> dict:
+    def run_pipeline(
+        self, session_id: str, issue: dict, is_reinvocation: bool = False
+    ) -> dict:
         owner = _validate_identifier(issue["repo_owner"], "repo_owner")
         repo = _validate_identifier(issue["repo_name"], "repo_name")
         number = issue["issue_number"]
@@ -29,14 +31,20 @@ class ClaudeStrategy(AssistantStrategy):
 
         otel = _otel_attrs_prefix(session_id)
 
-        # Skip MCP pre-check — execute_command doesn't capture stdout reliably
-        # (AgentCore API returns contentStart/contentStop without contentDelta).
-        # The agent will fail gracefully if MCP is unreachable during execution.
+        if is_reinvocation:
+            prompt = (
+                f"You are being re-invoked on issue #{number} "
+                f'("{title}"). Owner: {owner}, Repo: {repo}. '
+                f"Read .dev-claude/issue.json for the latest issue state including new comments. "
+                f"Continue where you left off — the issue has new activity that needs your attention. "
+                f"Follow the orchestrator skill."
+            )
+        else:
+            prompt = (
+                f"Follow the orchestrator skill for issue #{number} "
+                f'("{title}"). Owner: {owner}, Repo: {repo}.'
+            )
 
-        prompt = (
-            f"Follow the orchestrator skill for issue #{number} "
-            f'("{title}"). Owner: {owner}, Repo: {repo}.'
-        )
         prompt_b64 = base64.b64encode(prompt.encode()).decode()
 
         execute_command(

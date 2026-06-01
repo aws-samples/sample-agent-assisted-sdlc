@@ -136,7 +136,34 @@ class AssistantStrategy(ABC):
             f"[ $EXIT -eq 0 ] && echo OK || echo FAILED'",
         )
 
+    def refresh_for_reinvocation(self, session_id: str, issue: dict) -> dict:
+        """Re-invocation: rotate invocation dir, refresh issue.json with latest context."""
+        # Rotate: create next invocation-N directory and update 'current' symlink
+        rotate_result = execute_command(
+            session_id,
+            "sh -c 'cd /mnt/workplace/gitproject/.dev-claude && "
+            "N=$(ls -d invocation-* 2>/dev/null | wc -l); N=$((N + 1)); "
+            "mkdir -p invocation-$N && "
+            "ln -sfn invocation-$N current && "
+            "echo invocation-$N'",
+        )
+        print(
+            f"[refresh_for_reinvocation] Rotated to: {rotate_result.get('stdout', '').strip()}"
+        )
+
+        # Refresh issue.json with latest event data (includes new comments)
+        issue_b64 = base64.b64encode(json.dumps(issue).encode()).decode()
+        execute_command(
+            session_id,
+            f"sh -c 'echo {issue_b64} | base64 -d > /mnt/workplace/gitproject/.dev-claude/issue.json'",
+        )
+        print("[refresh_for_reinvocation] Refreshed issue.json")
+
+        return rotate_result
+
     @abstractmethod
-    def run_pipeline(self, session_id: str, issue: dict) -> dict:
+    def run_pipeline(
+        self, session_id: str, issue: dict, is_reinvocation: bool = False
+    ) -> dict:
         """Execute the full SDLC pipeline. Returns execute_command result."""
         ...
