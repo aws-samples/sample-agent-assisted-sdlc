@@ -37,19 +37,31 @@ class AssistantStrategy(ABC):
 
     def setup_workspace(self, session_id: str, issue: dict) -> dict:
         """Copy plugin to workspace, write issue/project context, fix permissions."""
+        # Debug: check what's actually at the plugin mount point
+        mount_check = execute_command(
+            session_id,
+            f"sh -c 'echo MOUNT_CONTENTS: && ls -la {self.plugin_path}/ 2>&1 && echo FIND: && find {self.plugin_path} -maxdepth 1 -type f -o -type d 2>&1'",
+        )
+        print(f"[setup_workspace] Plugin mount check: {mount_check.get('stdout', '')}")
+
         result = execute_command(
             session_id,
             f"sh -c 'mkdir -p /mnt/workplace/gitproject/.dev-claude /mnt/workplace/gitproject/.claude && "
             f"cp -r {self.plugin_path}/skills {self.plugin_path}/hooks {self.plugin_path}/.claude-plugin "
             f"{self.plugin_path}/settings.json {self.plugin_path}/.mcp.json {self.plugin_path}/gateway-iam-proxy "
-            f"/mnt/workplace/gitproject/ && "
+            f"/mnt/workplace/gitproject/ 2>&1 && "
             f"cp /mnt/workplace/gitproject/settings.json /mnt/workplace/gitproject/.claude/settings.json && "
             f"chmod +x /mnt/workplace/gitproject/hooks/*.sh && echo OK'",
+        )
+        print(
+            f"[setup_workspace] Copy result: {result.get('stdout', '')} | stderr: {result.get('stderr', '')}"
         )
 
         if "OK" not in result.get("stdout", ""):
             raise RuntimeError(
-                f"Plugin copy failed — /mnt/plugins may not be mounted. Output: {result.get('stdout', '')}"
+                f"Plugin copy failed — /mnt/plugins may not be mounted. "
+                f"Mount contents: {mount_check.get('stdout', '')} | "
+                f"Copy output: {result.get('stdout', '')}"
             )
 
         issue_b64 = base64.b64encode(json.dumps(issue).encode()).decode()
