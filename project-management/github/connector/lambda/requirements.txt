@@ -1,3 +1,4 @@
 boto3==1.43.18
 botocore==1.43.18
 requests==2.34.2
+PyJWT[crypto]==2.13.0
