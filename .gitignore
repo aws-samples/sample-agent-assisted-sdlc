@@ -248,3 +248,14 @@ __marimo__/
 cdk.*/
 cdk.context.json
 .claude
+
+# Orchestrator infrastructure — present in the runtime workspace but must remain
+# untracked so `git reset --hard` during agent re-invocation does not delete them.
+.dev-claude/
+hooks/
+skills/
+.claude-plugin/
+.mcp.json
+settings.json
+gateway-iam-proxy/
+sdlc-config.yaml.bak
