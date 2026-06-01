@@ -37,7 +37,8 @@ class ClaudeStrategy(AssistantStrategy):
                 f'("{title}"). Owner: {owner}, Repo: {repo}. '
                 f"Read .dev-claude/issue.json for the latest issue state including new comments. "
                 f"Continue where you left off — the issue has new activity that needs your attention. "
-                f"Follow the orchestrator skill."
+                f"Follow the orchestrator skill. "
+                f"Files have been updated since your last run; re-read before editing."
             )
         else:
             prompt = (
@@ -59,7 +60,8 @@ class ClaudeStrategy(AssistantStrategy):
             f"claude --continue --dangerously-skip-permissions "
             f"--plugin-dir /mnt/workplace/gitproject "
             f'-p "$(cat /tmp/prompt.txt)" '
-            f'--allowedTools "mcp__gateway__*,Read,Write,Edit,Bash,Task,ToolSearch" < /dev/null 2>&1\'',
+            f'--allowedTools "mcp__gateway__*,Read,Write,Edit,Bash,Task,ToolSearch" < /dev/null 2>&1\''
+            ,
             timeout=2400,
             blocking=False,
         )

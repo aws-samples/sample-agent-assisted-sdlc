@@ -89,9 +89,12 @@ def handler(event, context):
     )
 
     if is_reinvocation:
-        # Re-invocation: refresh issue.json with latest comments, rotate invocation dir
+        # Re-invocation: fetch latest commits, refresh issue.json, rotate invocation dir.
+        # Mint a fresh GitHub App installation token for private repos — never cache across
+        # invocations (tokens expire in ≤1 hour). For public repos, no token is needed.
         print("[github-setup] Refreshing issue.json and rotating invocation...")
-        strategy.refresh_for_reinvocation(session_id, event)
+        token = get_token() if is_private else None
+        strategy.refresh_for_reinvocation(session_id, event, token=token)
     else:
         # First invocation: clone + full setup
         token = get_token() if is_private else None
