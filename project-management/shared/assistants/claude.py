@@ -29,18 +29,9 @@ class ClaudeStrategy(AssistantStrategy):
 
         otel = _otel_attrs_prefix(session_id)
 
-        mcp_check = execute_command(
-            session_id,
-            f"sh -c 'cd /mnt/workplace/gitproject && {otel}claude mcp list 2>&1'",
-            timeout=60,
-        )
-        if "Connected" not in mcp_check.get("stdout", ""):
-            return {
-                "error": "MCP gateway not reachable",
-                "stdout": mcp_check.get("stdout", ""),
-                "stderr": mcp_check.get("stderr", ""),
-                "exitCode": 1,
-            }
+        # Skip MCP pre-check — execute_command doesn't capture stdout reliably
+        # (AgentCore API returns contentStart/contentStop without contentDelta).
+        # The agent will fail gracefully if MCP is unreachable during execution.
 
         prompt = (
             f"Follow the orchestrator skill for issue #{number} "
