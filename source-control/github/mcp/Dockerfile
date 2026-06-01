@@ -5,7 +5,7 @@ WORKDIR /build
 RUN apk add --no-cache git
 
 # Clone the official GitHub MCP server (pinned to release tag)
-ARG GITHUB_MCP_VERSION=v0.2.0
+ARG GITHUB_MCP_VERSION=v1.1.1
 RUN git clone --branch ${GITHUB_MCP_VERSION} --depth 1 https://github.com/github/github-mcp-server.git .
 
 RUN CGO_ENABLED=0 go build -ldflags="-s -w" \

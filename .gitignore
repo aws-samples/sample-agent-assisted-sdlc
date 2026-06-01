@@ -247,3 +247,4 @@ __marimo__/
 .DS_Store
 cdk.*/
 cdk.context.json
+.claude

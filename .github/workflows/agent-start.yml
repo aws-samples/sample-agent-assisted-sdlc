@@ -73,9 +73,3 @@ jobs:
           echo "Started execution: $EXECUTION_ARN"
           echo "execution_arn=$EXECUTION_ARN" >> "$GITHUB_OUTPUT"
 
-      - name: Comment on issue
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh issue comment ${{ github.event.issue.number }} \
-            --body "🤖 **Agent pipeline started.** The coding assistant is working on this issue. A PR will be created when ready."
