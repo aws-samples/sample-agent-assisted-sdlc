@@ -60,6 +60,19 @@ export class McpGateway extends Construct {
         },
         physicalResourceId: cr.PhysicalResourceId.fromResponse("gatewayId"),
       },
+      // No-op refresh on stack updates — re-fetches gatewayId so dependents
+      // (WaitForReady, Target*) can resolve getResponseField("gatewayId"). Without
+      // this, AwsCustomResource falls back to onCreate on Update, which throws
+      // ResourceConflictException on the existing gateway and leaves the
+      // response empty.
+      onUpdate: {
+        service: "bedrock-agentcore-control",
+        action: "getGateway",
+        parameters: {
+          gatewayIdentifier: new cr.PhysicalResourceIdReference(),
+        },
+        physicalResourceId: cr.PhysicalResourceId.fromResponse("gatewayId"),
+      },
       onDelete: {
         service: "bedrock-agentcore-control",
         action: "deleteGateway",
