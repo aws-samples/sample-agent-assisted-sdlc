@@ -297,3 +297,104 @@ class TestFieldValidation:
         result = index.handler(make_event(), None)
         assert result["statusCode"] == 400
         assert "Unknown assistant type" in result["error"]
+
+
+class TestReinvocation:
+    """Re-invocation handler path: mint token only for private repos and forward via kwarg.
+
+    Patches are applied as context managers AFTER `importlib.reload(index)` so the
+    reloaded module sees the mocked symbols (decorator-style patches are bound to
+    the pre-reload module object and are silently dropped by `reload`).
+    """
+
+    def test_private_reinvocation_calls_get_token_and_forwards(self, monkeypatch):
+        monkeypatch.setenv("PRIVATE_REPO", "true")
+        monkeypatch.setenv("ALLOWED_USERS", json.dumps(["*"]))
+        monkeypatch.setenv("ALLOWED_REPOS", json.dumps([]))
+
+        import importlib
+
+        import index
+
+        importlib.reload(index)
+
+        mock_strategy = MagicMock()
+        mock_strategy.get_session_id.return_value = "session-123456789012345678901"
+        mock_strategy.refresh_for_reinvocation.return_value = {
+            "exitCode": 0,
+            "stdout": "OK",
+            "stderr": "",
+        }
+
+        with (
+            patch.object(index, "STRATEGIES") as mock_strategies,
+            patch.object(index, "get_token", return_value="t_xyz") as mock_get_token,
+            patch.object(
+                index,
+                "execute_command",
+                return_value={"exitCode": 0, "stdout": "REINVOKE\n", "stderr": ""},
+            ),
+        ):
+            mock_strategies.__getitem__.return_value = lambda: mock_strategy
+            mock_strategies.__contains__.return_value = True
+
+            result = index.handler(make_event(triggered_by="alice"), None)
+
+            assert result["statusCode"] == 200
+            assert result["is_reinvocation"] is True
+
+            # get_token was called exactly once for the private re-invocation.
+            assert mock_get_token.call_count == 1
+
+            # refresh_for_reinvocation received the minted token via the `token=` kwarg.
+            mock_strategy.refresh_for_reinvocation.assert_called_once()
+            kwargs = mock_strategy.refresh_for_reinvocation.call_args.kwargs
+            assert kwargs.get("token") == "t_xyz"
+
+            # First-invocation hooks must NOT run on re-invocation.
+            mock_strategy.clone_repo.assert_not_called()
+            mock_strategy.setup_workspace.assert_not_called()
+
+    def test_public_reinvocation_does_not_mint_token(self, monkeypatch):
+        monkeypatch.setenv("PRIVATE_REPO", "false")
+        monkeypatch.setenv("ALLOWED_USERS", json.dumps(["*"]))
+        monkeypatch.setenv("ALLOWED_REPOS", json.dumps([]))
+
+        import importlib
+
+        import index
+
+        importlib.reload(index)
+
+        mock_strategy = MagicMock()
+        mock_strategy.get_session_id.return_value = "session-123456789012345678901"
+        mock_strategy.refresh_for_reinvocation.return_value = {
+            "exitCode": 0,
+            "stdout": "OK",
+            "stderr": "",
+        }
+
+        with (
+            patch.object(index, "STRATEGIES") as mock_strategies,
+            patch.object(index, "get_token") as mock_get_token,
+            patch.object(
+                index,
+                "execute_command",
+                return_value={"exitCode": 0, "stdout": "REINVOKE\n", "stderr": ""},
+            ),
+        ):
+            mock_strategies.__getitem__.return_value = lambda: mock_strategy
+            mock_strategies.__contains__.return_value = True
+
+            result = index.handler(make_event(triggered_by="alice"), None)
+
+            assert result["statusCode"] == 200
+            assert result["is_reinvocation"] is True
+
+            # Public re-invocation: get_token must NOT be called.
+            mock_get_token.assert_not_called()
+
+            # token=None forwarded.
+            mock_strategy.refresh_for_reinvocation.assert_called_once()
+            kwargs = mock_strategy.refresh_for_reinvocation.call_args.kwargs
+            assert kwargs.get("token") is None
