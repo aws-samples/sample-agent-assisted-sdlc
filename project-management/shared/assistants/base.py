@@ -47,9 +47,9 @@ class AssistantStrategy(ABC):
         result = execute_command(
             session_id,
             f"sh -c 'mkdir -p /mnt/workplace/gitproject/.dev-claude /mnt/workplace/gitproject/.claude && "
-            f"cp -r {self.plugin_path}/skills {self.plugin_path}/hooks {self.plugin_path}/.claude-plugin "
-            f"{self.plugin_path}/settings.json {self.plugin_path}/.mcp.json {self.plugin_path}/gateway-iam-proxy "
-            f"/mnt/workplace/gitproject/ 2>&1 && "
+            f"cd {self.plugin_path} && "
+            f"cp -r skills hooks gateway-iam-proxy settings.json /mnt/workplace/gitproject/ 2>/dev/null; "
+            f"cp -r .claude-plugin .mcp.json /mnt/workplace/gitproject/ 2>/dev/null; "
             f"cp /mnt/workplace/gitproject/settings.json /mnt/workplace/gitproject/.claude/settings.json && "
             f"chmod +x /mnt/workplace/gitproject/hooks/*.sh && echo OK'",
         )
