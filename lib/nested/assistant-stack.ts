@@ -16,6 +16,7 @@ export interface AssistantStackProps extends cdk.StackProps {
   fileSystemSecurityGroup: ec2.ISecurityGroup;
   gatewayId?: string;
   gatewayUrl?: string;
+  privateKeySecretArn?: string;
 }
 
 export class AssistantStack extends cdk.Stack {
@@ -144,6 +145,11 @@ export class AssistantStack extends cdk.Stack {
         ALLOWED_USERS: JSON.stringify(config.projectManagement.github?.allowedUsers || []),
         ALLOWED_REPOS: JSON.stringify(config.sourceControl.github?.allowedRepos || []),
         SDLC_LABEL_PREFIX: config.projectManagement.github?.labelPrefix || "agent",
+        ...(config.sourceControl.github?.privateRepo && {
+          GITHUB_APP_CLIENT_ID: config.sourceControl.github.appClientId,
+          GITHUB_INSTALLATION_ID: config.sourceControl.github.installationId,
+          PRIVATE_KEY_SECRET_ARN: props.privateKeySecretArn || "",
+        }),
       },
       code: lambdaCode,
     });
@@ -152,6 +158,13 @@ export class AssistantStack extends cdk.Stack {
       actions: ["bedrock-agentcore:InvokeAgentRuntime", "bedrock-agentcore:InvokeAgentRuntimeCommand"],
       resources: [this.assistant.runtimeArn, `${this.assistant.runtimeArn}/runtime-endpoint/*`],
     }));
+
+    if (props.privateKeySecretArn) {
+      setupLambda.addToRolePolicy(new iam.PolicyStatement({
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [props.privateKeySecretArn],
+      }));
+    }
 
     const pipelineLambda = new cdk.aws_lambda.Function(this, "PipelineLambda", {
       runtime: cdk.aws_lambda.Runtime.PYTHON_3_12,

@@ -141,6 +141,7 @@ export function createStacks(app: cdk.App, config: SdlcConfig) {
     fileSystemSecurityGroup: infra.fileSystemSecurityGroup,
     gatewayId: gatewayStack.gatewayId,
     gatewayUrl: gatewayStack.gatewayUrl,
+    privateKeySecretArn: sourceControlStack.privateKeySecretArn,
   });
   assistantStack.addDependency(gatewayStack);
   Aspects.of(assistantStack).add(new AwsSolutionsChecks({ verbose: true }));
