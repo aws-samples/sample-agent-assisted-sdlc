@@ -124,6 +124,7 @@ export class AssistantStack extends cdk.Stack {
             execSync(`cp -r ${pmDir}/shared/assistants ${outputDir}/`);
             execSync(`cp ${pmDir}/shared/pipeline.py ${outputDir}/`);
             execSync(`cp ${pmDir}/shared/invoke_pipeline.py ${outputDir}/`);
+            execSync(`pip install -r ${pmDir}/github/connector/lambda/requirements.txt -t ${outputDir}/ --quiet`);
             return true;
           },
         },
