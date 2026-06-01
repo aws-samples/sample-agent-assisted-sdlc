@@ -23,6 +23,7 @@ export class S3FilesStorage extends Construct {
   public readonly bucket: s3.IBucket;
   public readonly accessPointArn: string;
   public readonly fileSystemId: string;
+  public readonly pluginsDeployment: s3deploy.BucketDeployment;
 
   constructor(scope: Construct, id: string, props: S3FilesStorageProps) {
     super(scope, id);
@@ -37,11 +38,14 @@ export class S3FilesStorage extends Construct {
       enforceSSL: true,
     });
 
-    // Upload plugins (excludes node_modules — handled by CodeBuild)
-    new s3deploy.BucketDeployment(this, "DeployPlugins", {
+    // Upload plugins (excludes node_modules — handled by CodeBuild).
+    // settings.json is excluded so the AssistantStack's ResolveSettingsJson
+    // custom resource is the sole writer of plugins/settings.json — see
+    // assistant-stack.ts for the substitution + ordering.
+    this.pluginsDeployment = new s3deploy.BucketDeployment(this, "DeployPlugins", {
       sources: [
         s3deploy.Source.asset(props.pluginsPath, {
-          exclude: ["*.pyc", "__pycache__", "node_modules", ".mcp.json.template"],
+          exclude: ["*.pyc", "__pycache__", "node_modules", ".mcp.json.template", "settings.json"],
         }),
       ],
       destinationBucket: this.bucket,

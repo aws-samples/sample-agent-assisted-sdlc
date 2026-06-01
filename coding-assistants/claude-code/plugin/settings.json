@@ -1,5 +1,5 @@
 {
-  "model": "global.anthropic.claude-opus-4-7",
+  "model": "{{MODEL}}",
   "permissionMode": "dontAsk",
   "permissions": {
     "deny": [

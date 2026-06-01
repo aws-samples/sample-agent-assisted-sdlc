@@ -1,3 +1,6 @@
+import * as fs from "fs";
+import * as path from "path";
+
 import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
@@ -9,6 +12,8 @@ import { CodingAssistant } from "../constructs/runtime/coding-assistant";
 import { S3FilesStorage } from "../constructs/storage/s3-files";
 import { SdlcConfig, getAssistantDir } from "../config";
 
+const DEFAULT_MODEL = "global.anthropic.claude-opus-4-7";
+
 export interface AssistantStackProps extends cdk.StackProps {
   config: SdlcConfig;
   vpc: ec2.IVpc;
@@ -16,7 +21,6 @@ export interface AssistantStackProps extends cdk.StackProps {
   fileSystemSecurityGroup: ec2.ISecurityGroup;
   gatewayId?: string;
   gatewayUrl?: string;
-  privateKeySecretArn?: string;
 }
 
 export class AssistantStack extends cdk.Stack {
@@ -74,6 +78,49 @@ export class AssistantStack extends cdk.Stack {
       resources: [`arn:aws:bedrock-agentcore:${this.region}:${this.account}:gateway/*`],
     }));
 
+    // Write plugins/settings.json to S3 with codingAssistant.model substituted
+    // into the {{MODEL}} placeholder. The static plugin/settings.json carries
+    // the placeholder; this custom resource is the sole writer of the rendered
+    // file (the plugins BucketDeployment excludes settings.json).
+    //
+    // Only claude-code ships a settings.json — Kiro and Codex use their own
+    // config formats and ignore this file, so skip the resource for them.
+    //
+    // Ordering: depend on the plugins BucketDeployment so the directory shape
+    // is in place before we put, and force the runtime to wait on this resource
+    // so a cold-start session never mounts an unsubstituted file.
+    if (config.codingAssistant.type === "claude-code") {
+      const pluginDir = `./coding-assistants/${getAssistantDir(config)}/plugin`;
+      const settingsTemplate = fs.readFileSync(
+        path.join(pluginDir, "settings.json"),
+        "utf-8",
+      );
+      const resolvedModel = config.codingAssistant.model ?? DEFAULT_MODEL;
+      const resolvedSettings = settingsTemplate.replace("{{MODEL}}", resolvedModel);
+
+      const resolveSettingsJson = new cr.AwsCustomResource(this, "ResolveSettingsJson", {
+        onUpdate: {
+          service: "S3",
+          action: "putObject",
+          parameters: {
+            Bucket: storage.bucket.bucketName,
+            Key: "plugins/settings.json",
+            Body: resolvedSettings,
+            ContentType: "application/json",
+          },
+          physicalResourceId: cr.PhysicalResourceId.of(`settings-json-${Date.now()}`),
+        },
+        policy: cr.AwsCustomResourcePolicy.fromStatements([
+          new iam.PolicyStatement({
+            actions: ["s3:PutObject"],
+            resources: [`${storage.bucket.bucketArn}/plugins/settings.json`],
+          }),
+        ]),
+      });
+      resolveSettingsJson.node.addDependency(storage.pluginsDeployment);
+      this.assistant.node.addDependency(resolveSettingsJson);
+    }
+
     // Write .mcp.json to S3 (gateway proxy config)
     new cr.AwsCustomResource(this, "ResolveMcpJson", {
       onUpdate: {
@@ -111,38 +158,6 @@ export class AssistantStack extends cdk.Stack {
     // Manual sync via CLI: aws bedrock-agentcore-control synchronize-gateway-targets
 
     // Step Functions + Lambdas
-    // Bundle both connector/lambda and shared/ into the Lambda package
-    const path = require("path");
-    const pmDir = path.resolve("./project-management");
-    const lambdaCode = cdk.aws_lambda.Code.fromAsset(pmDir, {
-      bundling: {
-        image: cdk.aws_lambda.Runtime.PYTHON_3_12.bundlingImage,
-        command: ["bash", "-c", "echo unused"],
-        local: {
-          tryBundle(outputDir: string) {
-            const fs = require("fs");
-            const path = require("path");
-            const { execSync } = require("child_process");
-            const lambdaDir = path.join(pmDir, "github/connector/lambda");
-            const sharedDir = path.join(pmDir, "shared");
-
-            // Copy Lambda handler files
-            for (const f of fs.readdirSync(lambdaDir)) {
-              fs.cpSync(path.join(lambdaDir, f), path.join(outputDir, f), { recursive: true });
-            }
-            // Copy shared modules
-            fs.cpSync(path.join(sharedDir, "assistants"), path.join(outputDir, "assistants"), { recursive: true });
-            fs.cpSync(path.join(sharedDir, "pipeline.py"), path.join(outputDir, "pipeline.py"));
-            fs.cpSync(path.join(sharedDir, "invoke_pipeline.py"), path.join(outputDir, "invoke_pipeline.py"));
-            // Install pip dependencies for Lambda target platform
-            const reqFile = path.join(lambdaDir, "requirements.txt");
-            execSync(`pip install -r "${reqFile}" -t "${outputDir}/" --quiet --platform manylinux2014_x86_64 --implementation cp --python-version 3.12 --only-binary=:all:`);
-            return true;
-          },
-        },
-      },
-    });
-
     const setupLambda = new cdk.aws_lambda.Function(this, "SetupLambda", {
       runtime: cdk.aws_lambda.Runtime.PYTHON_3_12,
       handler: "index.handler",
@@ -156,26 +171,14 @@ export class AssistantStack extends cdk.Stack {
         ALLOWED_USERS: JSON.stringify(config.projectManagement.github?.allowedUsers || []),
         ALLOWED_REPOS: JSON.stringify(config.sourceControl.github?.allowedRepos || []),
         SDLC_LABEL_PREFIX: config.projectManagement.github?.labelPrefix || "agent",
-        ...(config.sourceControl.github?.privateRepo && {
-          GITHUB_APP_CLIENT_ID: config.sourceControl.github.appClientId,
-          GITHUB_INSTALLATION_ID: config.sourceControl.github.installationId,
-          PRIVATE_KEY_SECRET_ARN: props.privateKeySecretArn || "",
-        }),
       },
-      code: lambdaCode,
+      code: cdk.aws_lambda.Code.fromAsset("./project-management/github/connector/lambda"),
     });
 
     setupLambda.addToRolePolicy(new iam.PolicyStatement({
       actions: ["bedrock-agentcore:InvokeAgentRuntime", "bedrock-agentcore:InvokeAgentRuntimeCommand"],
       resources: [this.assistant.runtimeArn, `${this.assistant.runtimeArn}/runtime-endpoint/*`],
     }));
-
-    if (props.privateKeySecretArn) {
-      setupLambda.addToRolePolicy(new iam.PolicyStatement({
-        actions: ["secretsmanager:GetSecretValue"],
-        resources: [props.privateKeySecretArn],
-      }));
-    }
 
     const pipelineLambda = new cdk.aws_lambda.Function(this, "PipelineLambda", {
       runtime: cdk.aws_lambda.Runtime.PYTHON_3_12,
@@ -187,7 +190,7 @@ export class AssistantStack extends cdk.Stack {
         ASSISTANT_TYPE: config.codingAssistant.type,
         AWS_REGION_NAME: config.region,
       },
-      code: lambdaCode,
+      code: cdk.aws_lambda.Code.fromAsset("./project-management/github/connector/lambda"),
     });
 
     pipelineLambda.addToRolePolicy(new iam.PolicyStatement({

@@ -25,6 +25,9 @@ vpc:
 codingAssistant:
   type: claude-code               # claude-code | codex | kiro
   model: global.anthropic.claude-opus-4-7
+                                  # Rendered into the runtime's settings.json
+                                  # at deploy time (claude-code only). Defaults
+                                  # to global.anthropic.claude-opus-4-7 if omitted.
   idleTimeout: 900                # Seconds idle before session terminates
   maxLifetime: 2400               # Maximum session duration in seconds
   sessionStorageMountPath: /mnt/workplace
