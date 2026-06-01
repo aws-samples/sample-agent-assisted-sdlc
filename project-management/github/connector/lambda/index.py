@@ -26,9 +26,8 @@ import sys
 # Add shared modules to path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
 
-from token import get_token
-
 from assistants import STRATEGIES
+from github_token import get_token
 
 ALLOWED_USERS = json.loads(os.environ.get("ALLOWED_USERS", "[]"))
 ALLOWED_REPOS = json.loads(os.environ.get("ALLOWED_REPOS", "[]"))
