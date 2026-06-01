@@ -25,7 +25,7 @@ def _validate_identifier(value: str, field_name: str) -> str:
 class AssistantStrategy(ABC):
     """Each coding assistant implements this to define how it runs the SDLC pipeline."""
 
-    plugin_path: str = "/mnt/plugins/claude"
+    plugin_path: str = "/mnt/plugins"
 
     @property
     def runtime_arn(self) -> str:
@@ -40,10 +40,17 @@ class AssistantStrategy(ABC):
         result = execute_command(
             session_id,
             f"sh -c 'mkdir -p /mnt/workplace/gitproject/.dev-claude /mnt/workplace/gitproject/.claude && "
-            f"cp -a {self.plugin_path}/. /mnt/workplace/gitproject/ && "
+            f"cp -r {self.plugin_path}/skills {self.plugin_path}/hooks {self.plugin_path}/.claude-plugin "
+            f"{self.plugin_path}/settings.json {self.plugin_path}/.mcp.json {self.plugin_path}/gateway-iam-proxy "
+            f"/mnt/workplace/gitproject/ && "
             f"cp /mnt/workplace/gitproject/settings.json /mnt/workplace/gitproject/.claude/settings.json && "
             f"chmod +x /mnt/workplace/gitproject/hooks/*.sh && echo OK'",
         )
+
+        if "OK" not in result.get("stdout", ""):
+            raise RuntimeError(
+                f"Plugin copy failed — /mnt/plugins may not be mounted. Output: {result.get('stdout', '')}"
+            )
 
         issue_b64 = base64.b64encode(json.dumps(issue).encode()).decode()
         execute_command(

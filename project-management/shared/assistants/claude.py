@@ -19,7 +19,7 @@ def _otel_attrs_prefix(session_id: str) -> str:
 
 
 class ClaudeStrategy(AssistantStrategy):
-    plugin_path = "/mnt/plugins/claude"
+    plugin_path = "/mnt/plugins"
 
     def run_pipeline(self, session_id: str, issue: dict) -> dict:
         owner = _validate_identifier(issue["repo_owner"], "repo_owner")

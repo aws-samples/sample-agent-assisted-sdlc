@@ -129,14 +129,14 @@ You become a pure orchestrator. Do NOT call Read, Write, Edit, Bash, or MCP
 tools directly. Your only allowed tool is Agent.
 
 PIPELINE:
-1. Agent(subagent_type="explore-agent", prompt="Run the explore stage for issue #{number}.")
-2. Agent(subagent_type="clarification-agent", prompt="Run the clarification stage for issue #{number}.")
-   After this returns, if questions.md lacks an ANSWERED marker, STOP.
-3. Agent(subagent_type="implement-agent", prompt="First implementation pass for issue #{number}.")
-4. Agent(subagent_type="critique-agent", prompt="Review the implementation for issue #{number}.")
-5. If critique.md is not "LGTM: no changes needed":
-   Agent(subagent_type="implement-agent", prompt="Apply critique for issue #{number}.")
-6. Agent(subagent_type="pr-agent", prompt="Push branch and open PR for issue #{number}.")
+1. Agent(prompt="Read the file skills/explore/SKILL.md and follow its instructions for issue #{number}. Owner: {owner}, Repo: {repo}.")
+2. Agent(prompt="Read the file skills/clarification/SKILL.md and follow its instructions for issue #{number}. Owner: {owner}, Repo: {repo}.")
+   After this returns, if .dev-claude/current/questions.md lacks an ANSWERED marker, STOP.
+3. Agent(prompt="Read the file skills/implement/SKILL.md and follow its instructions for issue #{number}. Owner: {owner}, Repo: {repo}.")
+4. Agent(prompt="Read the file skills/critique/SKILL.md and follow its instructions for issue #{number}. Owner: {owner}, Repo: {repo}.")
+5. If .dev-claude/current/critique.md is not "LGTM: no changes needed":
+   Agent(prompt="Read the file skills/implement/SKILL.md and apply the critique from .dev-claude/current/critique.md for issue #{number}. Owner: {owner}, Repo: {repo}.")
+6. Agent(prompt="Read the file skills/pr/SKILL.md and follow its instructions for issue #{number}. Owner: {owner}, Repo: {repo}.")
 
 ═══════════════════════════════════════════════════════════
 EXIT CONDITIONS (both paths):
