@@ -111,20 +111,19 @@ export class AssistantStack extends cdk.Stack {
 
     // Step Functions + Lambdas
     // Bundle both connector/lambda and shared/ into the Lambda package
-    const lambdaCode = cdk.aws_lambda.Code.fromAsset("./project-management", {
+    const path = require("path");
+    const pmDir = path.resolve("./project-management");
+    const lambdaCode = cdk.aws_lambda.Code.fromAsset(pmDir, {
       bundling: {
         image: cdk.aws_lambda.Runtime.PYTHON_3_12.bundlingImage,
         command: ["bash", "-c", "echo unused"],
         local: {
           tryBundle(outputDir: string) {
             const { execSync } = require("child_process");
-            execSync(`cp -r github/connector/lambda/* ${outputDir}/`);
-            execSync(`cp -r shared/assistants ${outputDir}/`);
-            execSync(`cp shared/pipeline.py ${outputDir}/`);
-            execSync(`cp shared/invoke_pipeline.py ${outputDir}/`);
-            if (require("fs").existsSync("github/connector/lambda/requirements.txt")) {
-              execSync(`pip install -r github/connector/lambda/requirements.txt -t ${outputDir}/ --quiet`, { cwd: "." });
-            }
+            execSync(`cp -r ${pmDir}/github/connector/lambda/* ${outputDir}/`);
+            execSync(`cp -r ${pmDir}/shared/assistants ${outputDir}/`);
+            execSync(`cp ${pmDir}/shared/pipeline.py ${outputDir}/`);
+            execSync(`cp ${pmDir}/shared/invoke_pipeline.py ${outputDir}/`);
             return true;
           },
         },
