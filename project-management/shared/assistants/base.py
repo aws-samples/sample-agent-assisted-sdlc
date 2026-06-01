@@ -40,7 +40,7 @@ class AssistantStrategy(ABC):
         # Debug: check what's actually at the plugin mount point
         mount_check = execute_command(
             session_id,
-            f"sh -c 'echo MOUNT_CONTENTS: && ls -la {self.plugin_path}/ 2>&1 && echo FIND: && find {self.plugin_path} -maxdepth 1 -type f -o -type d 2>&1'",
+            f"sh -c 'echo MOUNT: && ls -la {self.plugin_path}/ 2>&1'",
         )
         print(f"[setup_workspace] Plugin mount check: {mount_check.get('stdout', '')}")
 
