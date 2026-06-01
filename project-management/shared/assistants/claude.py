@@ -60,8 +60,7 @@ class ClaudeStrategy(AssistantStrategy):
             f"claude --continue --dangerously-skip-permissions "
             f"--plugin-dir /mnt/workplace/gitproject "
             f'-p "$(cat /tmp/prompt.txt)" '
-            f'--allowedTools "mcp__gateway__*,Read,Write,Edit,Bash,Task,ToolSearch" < /dev/null 2>&1\''
-            ,
+            f'--allowedTools "mcp__gateway__*,Read,Write,Edit,Bash,Task,ToolSearch" < /dev/null 2>&1\'',
             timeout=2400,
             blocking=False,
         )
