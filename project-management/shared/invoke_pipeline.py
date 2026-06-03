@@ -28,15 +28,17 @@ def handler(event, context):
     session_id = event["session_id"]
     assistant_type = event.get("assistant_type", "claude-code")
     issue = event["issue"]
+    is_reinvocation = event.get("is_reinvocation", False)
 
     strategy = STRATEGIES[assistant_type]()
 
+    mode = "RE-INVOCATION" if is_reinvocation else "FIRST"
     print(
-        f"[sdlc-pipeline] Running pipeline: session={session_id} assistant={assistant_type}"
+        f"[sdlc-pipeline] Running pipeline ({mode}): session={session_id} assistant={assistant_type}"
     )
     print(f"[sdlc-pipeline] Issue #{issue['issue_number']}: {issue['issue_title']}")
 
-    result = strategy.run_pipeline(session_id, issue)
+    result = strategy.run_pipeline(session_id, issue, is_reinvocation=is_reinvocation)
 
     print(f"[sdlc-pipeline] Exit code: {result['exitCode']}")
     print(f"[sdlc-pipeline] Output (last 500 chars): {result['stdout'][-500:]}")

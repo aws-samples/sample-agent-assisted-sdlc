@@ -3,11 +3,8 @@
 
 """GitHub Setup Lambda — connector-specific setup for the SDLC pipeline.
 
-Handles GitHub-specific concerns:
-- Token generation for private repos (GitHub App JWT → installation token)
-- Clone URL format (x-access-token)
-
-Delegates to shared assistant strategies for workspace setup + pipeline execution.
+Handles first invocation (clone + setup) and re-invocation (refresh issue + continue).
+Detects re-invocation by checking if .dev-claude/invocation-1/ exists in the session.
 
 Environment variables:
   AGENT_RUNTIME_ARN: ARN of the coding assistant AgentCore runtime
@@ -21,21 +18,17 @@ Environment variables:
 
 import json
 import os
-import sys
-
-# Add shared modules to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../../shared"))
-
-from token import get_token
 
 from assistants import STRATEGIES
+from github_token import get_token
+from pipeline import execute_command
 
 ALLOWED_USERS = json.loads(os.environ.get("ALLOWED_USERS", "[]"))
 ALLOWED_REPOS = json.loads(os.environ.get("ALLOWED_REPOS", "[]"))
 
 
 def handler(event, context):
-    """GitHub Setup Lambda — prepares workspace, clones repo with GitHub auth."""
+    """GitHub Setup Lambda — prepares workspace or refreshes for re-invocation."""
     safe_event = {
         k: v for k, v in event.items() if k not in ("token", "private_key", "secret")
     }
@@ -80,28 +73,47 @@ def handler(event, context):
 
     session_id = strategy.get_session_id(repo_owner, repo_name, issue_number)
     print(
-        f"[github-setup] assistant={assistant_type} session={session_id} repo={repo_owner}/{repo_name}"
+        f"[github-setup] assistant={assistant_type} session={session_id} repo={repo_full}"
     )
 
-    # Step 1: Clone repo first (into /mnt/workplace/gitproject)
-    token = get_token() if is_private else None
-    print(f"[github-setup] Cloning repo (private={is_private})...")
-    result = strategy.clone_repo(
-        session_id, repo_owner, repo_name, private=is_private, token=token
+    # Detect re-invocation: check if invocation-1/ already exists in this session
+    check = execute_command(
+        session_id,
+        "sh -c 'test -d /mnt/workplace/gitproject/.dev-claude/invocation-1 && echo REINVOKE || echo FIRST'",
+        timeout=10,
     )
-    print(f"[github-setup] Clone: {result['stdout'].strip()[-100:]}")
+    # stdout may be empty due to API event format — fall back to FIRST
+    is_reinvocation = "REINVOKE" in check.get("stdout", "")
+    print(
+        f"[github-setup] Mode: {'RE-INVOCATION' if is_reinvocation else 'FIRST INVOCATION'}"
+    )
 
-    # Step 2: Copy plugin on top of cloned repo + write context files
-    print("[github-setup] Setting up workspace...")
-    result = strategy.setup_workspace(session_id, event)
-    print(f"[github-setup] Workspace: {result['stdout'].strip()}")
+    if is_reinvocation:
+        # Re-invocation: fetch latest commits, refresh issue.json, rotate invocation dir.
+        # Mint a fresh GitHub App installation token for private repos — never cache across
+        # invocations (tokens expire in ≤1 hour). For public repos, no token is needed.
+        print("[github-setup] Refreshing issue.json and rotating invocation...")
+        token = get_token() if is_private else None
+        strategy.refresh_for_reinvocation(session_id, event, token=token)
+    else:
+        # First invocation: clone + full setup
+        token = get_token() if is_private else None
+        print(f"[github-setup] Cloning repo (private={is_private})...")
+        result = strategy.clone_repo(
+            session_id, repo_owner, repo_name, private=is_private, token=token
+        )
+        print(f"[github-setup] Clone: {result.get('stdout', '').strip()[-100:]}")
 
-    # Return session info for Step Functions pipeline step
+        print("[github-setup] Setting up workspace...")
+        result = strategy.setup_workspace(session_id, event)
+        print(f"[github-setup] Workspace: {result.get('stdout', '')}")
+
     return {
         "statusCode": 200,
         "session_id": session_id,
         "runtime_arn": strategy.runtime_arn,
         "assistant_type": assistant_type,
+        "is_reinvocation": is_reinvocation,
         "issue": {
             "repo_owner": repo_owner,
             "repo_name": repo_name,

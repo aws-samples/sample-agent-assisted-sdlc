@@ -16,6 +16,7 @@ export interface AssistantStackProps extends cdk.StackProps {
   fileSystemSecurityGroup: ec2.ISecurityGroup;
   gatewayId?: string;
   gatewayUrl?: string;
+  privateKeySecretArn?: string;
 }
 
 export class AssistantStack extends cdk.Stack {
@@ -110,6 +111,38 @@ export class AssistantStack extends cdk.Stack {
     // Manual sync via CLI: aws bedrock-agentcore-control synchronize-gateway-targets
 
     // Step Functions + Lambdas
+    // Bundle both connector/lambda and shared/ into the Lambda package
+    const path = require("path");
+    const pmDir = path.resolve("./project-management");
+    const lambdaCode = cdk.aws_lambda.Code.fromAsset(pmDir, {
+      bundling: {
+        image: cdk.aws_lambda.Runtime.PYTHON_3_12.bundlingImage,
+        command: ["bash", "-c", "echo unused"],
+        local: {
+          tryBundle(outputDir: string) {
+            const fs = require("fs");
+            const path = require("path");
+            const { execSync } = require("child_process");
+            const lambdaDir = path.join(pmDir, "github/connector/lambda");
+            const sharedDir = path.join(pmDir, "shared");
+
+            // Copy Lambda handler files
+            for (const f of fs.readdirSync(lambdaDir)) {
+              fs.cpSync(path.join(lambdaDir, f), path.join(outputDir, f), { recursive: true });
+            }
+            // Copy shared modules
+            fs.cpSync(path.join(sharedDir, "assistants"), path.join(outputDir, "assistants"), { recursive: true });
+            fs.cpSync(path.join(sharedDir, "pipeline.py"), path.join(outputDir, "pipeline.py"));
+            fs.cpSync(path.join(sharedDir, "invoke_pipeline.py"), path.join(outputDir, "invoke_pipeline.py"));
+            // Install pip dependencies for Lambda target platform
+            const reqFile = path.join(lambdaDir, "requirements.txt");
+            execSync(`pip install -r "${reqFile}" -t "${outputDir}/" --quiet --platform manylinux2014_x86_64 --implementation cp --python-version 3.12 --only-binary=:all:`);
+            return true;
+          },
+        },
+      },
+    });
+
     const setupLambda = new cdk.aws_lambda.Function(this, "SetupLambda", {
       runtime: cdk.aws_lambda.Runtime.PYTHON_3_12,
       handler: "index.handler",
@@ -123,14 +156,26 @@ export class AssistantStack extends cdk.Stack {
         ALLOWED_USERS: JSON.stringify(config.projectManagement.github?.allowedUsers || []),
         ALLOWED_REPOS: JSON.stringify(config.sourceControl.github?.allowedRepos || []),
         SDLC_LABEL_PREFIX: config.projectManagement.github?.labelPrefix || "agent",
+        ...(config.sourceControl.github?.privateRepo && {
+          GITHUB_APP_CLIENT_ID: config.sourceControl.github.appClientId,
+          GITHUB_INSTALLATION_ID: config.sourceControl.github.installationId,
+          PRIVATE_KEY_SECRET_ARN: props.privateKeySecretArn || "",
+        }),
       },
-      code: cdk.aws_lambda.Code.fromAsset("./project-management/github/connector/lambda"),
+      code: lambdaCode,
     });
 
     setupLambda.addToRolePolicy(new iam.PolicyStatement({
       actions: ["bedrock-agentcore:InvokeAgentRuntime", "bedrock-agentcore:InvokeAgentRuntimeCommand"],
       resources: [this.assistant.runtimeArn, `${this.assistant.runtimeArn}/runtime-endpoint/*`],
     }));
+
+    if (props.privateKeySecretArn) {
+      setupLambda.addToRolePolicy(new iam.PolicyStatement({
+        actions: ["secretsmanager:GetSecretValue"],
+        resources: [props.privateKeySecretArn],
+      }));
+    }
 
     const pipelineLambda = new cdk.aws_lambda.Function(this, "PipelineLambda", {
       runtime: cdk.aws_lambda.Runtime.PYTHON_3_12,
@@ -142,7 +187,7 @@ export class AssistantStack extends cdk.Stack {
         ASSISTANT_TYPE: config.codingAssistant.type,
         AWS_REGION_NAME: config.region,
       },
-      code: cdk.aws_lambda.Code.fromAsset("./project-management/github/connector/lambda"),
+      code: lambdaCode,
     });
 
     pipelineLambda.addToRolePolicy(new iam.PolicyStatement({

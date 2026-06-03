@@ -68,6 +68,7 @@ def execute_command(
     exit_code = -1
 
     buf = EventStreamBuffer()
+    raw_events = []
     for chunk in resp.iter_content(chunk_size=4096):
         if not chunk:
             continue
@@ -77,19 +78,24 @@ def execute_command(
                 continue
             try:
                 decoded = json.loads(ev.payload)
+                raw_events.append(str(decoded)[:200])
                 inner = decoded.get("chunk") if isinstance(decoded, dict) else None
-                if not isinstance(inner, dict):
-                    continue
-                if "contentDelta" in inner:
-                    d = inner["contentDelta"]
+                event = inner if isinstance(inner, dict) else decoded
+                if "contentDelta" in event:
+                    d = event["contentDelta"]
                     if "stdout" in d:
                         stdout_parts.append(d["stdout"])
                     if "stderr" in d:
                         stderr_parts.append(d["stderr"])
-                elif "contentStop" in inner:
-                    exit_code = int(inner["contentStop"].get("exitCode", -1))
+                elif "contentStop" in event:
+                    exit_code = int(event["contentStop"].get("exitCode", -1))
             except (json.JSONDecodeError, KeyError):
                 continue
+
+    if not stdout_parts and not stderr_parts:
+        print(
+            f"[execute_command] WARNING: No output captured. Raw events ({len(raw_events)}): {raw_events[:3]}"
+        )
 
     return {
         "stdout": "".join(stdout_parts),
