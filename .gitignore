@@ -251,11 +251,13 @@ cdk.context.json
 
 # Orchestrator infrastructure — present in the runtime workspace but must remain
 # untracked so `git reset --hard` during agent re-invocation does not delete them.
-.dev-claude/
-hooks/
-skills/
-.claude-plugin/
-.mcp.json
-settings.json
-gateway-iam-proxy/
-sdlc-config.yaml.bak
+# Anchored with leading `/` so they only match at repo root, not at every depth
+# (the same names exist as tracked files inside coding-assistants/.../plugin/).
+/.dev-claude/
+/hooks/
+/skills/
+/.claude-plugin/
+/.mcp.json
+/settings.json
+/gateway-iam-proxy/
+/sdlc-config.yaml.bak
