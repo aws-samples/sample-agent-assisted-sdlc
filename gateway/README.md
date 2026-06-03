@@ -5,7 +5,7 @@
 
 Contains the AgentCore Gateway IAM proxy and developer MCP servers.
 
-For the GitHub MCP runtime → toolset → gateway target → agent-facing prefix mapping (and the layered enforcement model that backs it), see [`TOOLSETS.md`](./TOOLSETS.md).
+For the GitHub MCP runtime → toolset → gateway target mapping and its enforcement chain, see [`SECURITY-PRACTICES.md` § GitHub MCP toolset scoping](../SECURITY-PRACTICES.md#github-mcp-toolset-scoping).
 
 ## Components
 

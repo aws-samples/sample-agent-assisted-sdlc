@@ -22,6 +22,8 @@ Artifact directory `./.dev-claude/` is gitignored.
 `GitHub___*` tools which Claude Code addresses as `mcp__gateway__GitHub___*`.
 Bearer token is injected by Lambda at invoke time via `${GATEWAY_BEARER}`.
 
+For the runtime → toolset → gateway target → tool-prefix mapping and its enforcement chain, see [`SECURITY-PRACTICES.md` § GitHub MCP toolset scoping](../../../SECURITY-PRACTICES.md#github-mcp-toolset-scoping).
+
 ## Labels (set by subagents via MCP, never by humans)
 
 - `stage:exploring` / `stage:implementing`
