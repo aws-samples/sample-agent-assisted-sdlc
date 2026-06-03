@@ -117,7 +117,6 @@ export function registerGatewayTarget(
       }),
     ]),
   });
-  sync.node.addDependency(target);
 
   // Wait for target to reach READY (fail deployment if target fails)
   const waiterLambdaPath = path.join(__dirname, "constructs/runtime/target-waiter-lambda");
@@ -171,7 +170,8 @@ export function registerGatewayTarget(
       TargetId: target.getResponseField("targetId"),
     },
   });
-  waiter.node.addDependency(sync);
+  waiter.node.addDependency(target);
+  sync.node.addDependency(waiter);
 
   return target;
 }
