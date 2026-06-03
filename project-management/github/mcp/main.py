@@ -134,10 +134,20 @@ class ProxyHandler(BaseHTTPRequestHandler):
         pass
 
 
+def _required_toolsets() -> str:
+    """Read and validate GITHUB_TOOLSETS. Raise RuntimeError on unset/empty."""
+    toolsets = os.environ.get("GITHUB_TOOLSETS", "")
+    if not toolsets:
+        raise RuntimeError(
+            "GITHUB_TOOLSETS env var is unset or empty. "
+            "Expected to be set by ProjectManagementStack "
+            "(lib/nested/project-management-stack.ts), e.g. 'issues'."
+        )
+    return toolsets
+
+
 def start_go_server():
-    toolsets = os.environ.get(
-        "GITHUB_TOOLSETS", "repos,issues,pull_requests,context,users"
-    )
+    toolsets = _required_toolsets()
     env = {**os.environ, "GITHUB_PERSONAL_ACCESS_TOKEN": GITHUB_TOKEN}
     subprocess.run(
         [
@@ -153,6 +163,7 @@ def start_go_server():
 
 
 if __name__ == "__main__":
+    _required_toolsets()
     GITHUB_TOKEN = get_github_token()
     print("[githubmcp] Token generated from GitHub App, starting Go server...")
 
