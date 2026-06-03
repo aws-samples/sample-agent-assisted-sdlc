@@ -219,6 +219,77 @@ run_scope_test_no_project "block when project.json missing (fail-closed)" \
 rm -rf "$TMPDIR" "$TMPDIR2"
 
 echo ""
+echo "=== Comment Guard Tests ==="
+
+# Block: persona @-mention in issue comment body
+run_test "block @dev-claude in issue comment body" "comment-guard.sh" \
+  '{"tool_input":{"body":"Looks good — @dev-claude"}}' 2
+
+# Block: case-insensitive
+run_test "block @DevClaude (case-insensitive)" "comment-guard.sh" \
+  '{"tool_input":{"body":"thanks @DevClaude"}}' 2
+
+# Block: @claude alone
+run_test "block @claude" "comment-guard.sh" \
+  '{"tool_input":{"body":"see @claude for details"}}' 2
+
+# Block: persona @-mention in PR title
+run_test "block @dev-claude in PR title" "comment-guard.sh" \
+  '{"tool_input":{"title":"feat: x by @dev-claude","body":"normal body"}}' 2
+
+# Block: persona @-mention in commit message (push_files .message)
+run_test "block @dev-claude in commit message" "comment-guard.sh" \
+  '{"tool_input":{"message":"feat: x\n\nCo-authored-by: @dev-claude"}}' 2
+
+# Block: trailing em-dash signoff with persona name
+run_test "block trailing — dev-claude signoff" "comment-guard.sh" \
+  $'{"tool_input":{"body":"Implementation done.\\n\\n— dev-claude"}}' 2
+
+# Block: trailing em-dash signoff with @
+run_test "block trailing — @claude signoff" "comment-guard.sh" \
+  $'{"tool_input":{"body":"Done.\\n\\n— @claude"}}' 2
+
+# Block: trailing — bot signoff (generic agent)
+run_test "block trailing — bot signoff" "comment-guard.sh" \
+  $'{"tool_input":{"body":"Pushed.\\n\\n— bot"}}' 2
+
+# Block: persona name appears in PR body alongside fine title
+run_test "block @sdlc-ai-developer in PR body" "comment-guard.sh" \
+  '{"tool_input":{"title":"fix: thing","body":"Implemented by @sdlc-ai-developer"}}' 2
+
+# Allow: normal comment with no mentions
+run_test "allow normal exploration comment" "comment-guard.sh" \
+  '{"tool_input":{"body":"### Exploration Report\n\nFound the relevant files."}}' 0
+
+# Allow: issue cross-reference (#42 should NOT match @ rule)
+run_test "allow #42 cross-reference" "comment-guard.sh" \
+  '{"tool_input":{"body":"Closes #42 — fixes the regression."}}' 0
+
+# Allow: legitimate user @-mention (not a persona name)
+run_test "allow @reviewer (real user, not persona)" "comment-guard.sh" \
+  '{"tool_input":{"body":"@reviewer please look at this"}}' 0
+
+# Allow: persona name without @ prefix (descriptive use)
+run_test "allow descriptive 'dev-claude' without @" "comment-guard.sh" \
+  '{"tool_input":{"body":"The dev-claude orchestrator routed this to Path B."}}' 0
+
+# Allow: empty input (no body/title/message)
+run_test "allow empty tool_input" "comment-guard.sh" \
+  '{"tool_input":{}}' 0
+
+# Allow: PR title without mentions (typical create_pull_request payload)
+run_test "allow normal PR title + body" "comment-guard.sh" \
+  '{"tool_input":{"title":"feat: add session-tracking DDB","body":"## What\n\nAdds DDB."}}' 0
+
+# Allow: commit message without mentions
+run_test "allow normal commit message" "comment-guard.sh" \
+  '{"tool_input":{"message":"fix: handle empty config (#19)"}}' 0
+
+# Edge: email-shaped string with persona name should NOT match the @-mention rule
+run_test "allow persona name inside email string" "comment-guard.sh" \
+  '{"tool_input":{"body":"Contact: user@dev-claude.example.com"}}' 0
+
+echo ""
 echo "═══════════════════════════════════════"
 echo "RESULTS: $PASS passed, $FAIL failed ($(( PASS + FAIL )) total)"
 echo "═══════════════════════════════════════"

@@ -25,6 +25,10 @@
       {
         "matcher": "Bash",
         "hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/bash-guard.sh", "timeout": 5}]
+      },
+      {
+        "matcher": "mcp__gateway__github-issues___add_issue_comment|mcp__gateway__github-issues___issue_write|mcp__gateway__github-code___add_pull_request_comment|mcp__gateway__github-code___create_pull_request|mcp__gateway__github-code___push_files",
+        "hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/comment-guard.sh", "timeout": 5}]
       }
     ]
   }
