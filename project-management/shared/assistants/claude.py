@@ -34,10 +34,12 @@ class ClaudeStrategy(AssistantStrategy):
         if is_reinvocation:
             prompt = (
                 f"You are being re-invoked on issue #{number} "
-                f'("{title}"). Owner: {owner}, Repo: {repo}. '
-                f"Read .dev-claude/issue.json for the latest issue state including new comments. "
-                f"Continue where you left off — the issue has new activity that needs your attention. "
-                f"Follow the orchestrator skill."
+                f'("{title}").'
+                f" Owner: {owner}, Repo: {repo}."
+                f" Read .dev-claude/issue.json for the latest issue state including new comments."
+                f" Continue where you left off — the issue has new activity that needs your attention."
+                f" Follow the orchestrator skill."
+                f" Files have been updated since your last run; re-read before editing."
             )
         else:
             prompt = (
