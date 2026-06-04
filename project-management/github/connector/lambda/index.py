@@ -21,7 +21,7 @@ import os
 
 from assistants import STRATEGIES
 from github_token import get_token
-from pipeline import execute_command
+from pipeline import execute_command, stop_runtime_session
 
 ALLOWED_USERS = json.loads(os.environ.get("ALLOWED_USERS", "[]"))
 ALLOWED_REPOS = json.loads(os.environ.get("ALLOWED_REPOS", "[]"))
@@ -75,6 +75,26 @@ def handler(event, context):
     print(
         f"[github-setup] assistant={assistant_type} session={session_id} repo={repo_full}"
     )
+
+    # Refresh the AgentCore session's maxLifetime budget by stopping any
+    # existing microVM. The session ID stays valid; the next execute_command
+    # spins up a fresh microVM with a full 40-minute lifetime ahead of it.
+    # Persistent state on /mnt/workplace/ (including CLAUDE_CONFIG_DIR at
+    # /mnt/workplace/.claude-data) survives the stop. Best-effort: log and
+    # continue on failure since the next execute_command would re-spawn the
+    # microVM regardless. First-invocation runs (no microVM yet) typically
+    # succeed silently or return a benign no-op error from AgentCore.
+    try:
+        stop_runtime_session(session_id)
+        print(f"[github-setup] Stopped prior session microVM for {session_id}")
+    except Exception as e:
+        # Common case on first invocation: no microVM exists yet, AgentCore
+        # may return 404/400. Not fatal — proceed and let execute_command
+        # spin up the new microVM.
+        print(
+            f"[github-setup] stop_runtime_session non-fatal error (continuing): "
+            f"{type(e).__name__}: {str(e)[:200]}"
+        )
 
     # Detect re-invocation: check if invocation-1/ already exists in this session
     check = execute_command(

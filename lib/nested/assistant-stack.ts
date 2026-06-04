@@ -211,7 +211,14 @@ export class AssistantStack extends cdk.Stack {
     });
 
     setupLambda.addToRolePolicy(new iam.PolicyStatement({
-      actions: ["bedrock-agentcore:InvokeAgentRuntime", "bedrock-agentcore:InvokeAgentRuntimeCommand"],
+      actions: [
+        "bedrock-agentcore:InvokeAgentRuntime",
+        "bedrock-agentcore:InvokeAgentRuntimeCommand",
+        // Stop the prior microVM at the start of every Setup Lambda invocation
+        // to refresh the session's 40-minute maxLifetime budget. Session ID
+        // stays valid; persistent state on /mnt/workplace/ survives.
+        "bedrock-agentcore:StopRuntimeSession",
+      ],
       resources: [this.assistant.runtimeArn, `${this.assistant.runtimeArn}/runtime-endpoint/*`],
     }));
 
