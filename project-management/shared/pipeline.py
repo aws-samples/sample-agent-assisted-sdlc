@@ -102,3 +102,42 @@ def execute_command(
         "stderr": "".join(stderr_parts),
         "exitCode": exit_code,
     }
+
+
+def stop_runtime_session(session_id: str) -> dict:
+    """Stop the AgentCore runtime microVM for `session_id`.
+
+    The session ID itself remains valid — a subsequent `execute_command` will
+    spin up a fresh microVM. Persistent state on `/mnt/workplace/` (including
+    `CLAUDE_CONFIG_DIR=/mnt/workplace/.claude-data`) survives the stop. State on
+    the rootfs (`/tmp/`, `/home/`, in-flight processes) is lost.
+
+    Used by the Setup Lambda before each pipeline run to refresh the session's
+    `maxLifetime` budget. Best-effort: caller should wrap in try/except and
+    continue on failure — the next `execute_command` succeeds regardless.
+
+    Returns: `{"status": "STOPPED", "http_status": <int>}` on success.
+    Raises: `requests.HTTPError` on non-2xx response.
+
+    AWS API: `POST /runtimes/{agentRuntimeArn}/stopruntimesession`
+    IAM action: `bedrock-agentcore:StopRuntimeSession`
+    """
+    runtime_arn = _get_runtime_arn()
+    encoded_arn = urllib.parse.quote(runtime_arn, safe="")
+    url = (
+        f"https://bedrock-agentcore.{REGION}.amazonaws.com"
+        f"/runtimes/{encoded_arn}/stopruntimesession?qualifier=DEFAULT"
+    )
+
+    body = "{}"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Amzn-Bedrock-AgentCore-Runtime-Session-Id": session_id,
+        "Host": f"bedrock-agentcore.{REGION}.amazonaws.com",
+    }
+
+    signed_headers = sign_request("POST", url, body.encode(), headers)
+    resp = requests.post(url, data=body, headers=signed_headers, timeout=30)
+    resp.raise_for_status()
+
+    return {"status": "STOPPED", "http_status": resp.status_code}
