@@ -21,7 +21,7 @@ import os
 
 from assistants import STRATEGIES
 from github_token import get_token
-from pipeline import execute_command
+from pipeline import execute_command, stop_runtime_session
 
 ALLOWED_USERS = json.loads(os.environ.get("ALLOWED_USERS", "[]"))
 ALLOWED_REPOS = json.loads(os.environ.get("ALLOWED_REPOS", "[]"))
