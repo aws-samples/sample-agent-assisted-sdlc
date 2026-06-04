@@ -179,6 +179,8 @@ export class AssistantStack extends cdk.Stack {
             fs.cpSync(path.join(sharedDir, "assistants"), path.join(outputDir, "assistants"), { recursive: true });
             fs.cpSync(path.join(sharedDir, "pipeline.py"), path.join(outputDir, "pipeline.py"));
             fs.cpSync(path.join(sharedDir, "invoke_pipeline.py"), path.join(outputDir, "invoke_pipeline.py"));
+            fs.cpSync(path.join(sharedDir, "log.py"), path.join(outputDir, "log.py"));
+            fs.cpSync(path.join(sharedDir, "errors.py"), path.join(outputDir, "errors.py"));
             // Install pip dependencies for Lambda target platform
             const reqFile = path.join(lambdaDir, "requirements.txt");
             execSync(`pip install -r "${reqFile}" -t "${outputDir}/" --quiet --platform manylinux2014_x86_64 --implementation cp --python-version 3.12 --only-binary=:all:`);
