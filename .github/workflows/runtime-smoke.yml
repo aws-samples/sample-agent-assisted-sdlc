@@ -1,0 +1,57 @@
+name: Runtime image smoke
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "coding-assistants/*/runtime/**"
+      - "gateway/developer-mcp-servers/*/**"
+      - "project-management/github/mcp/**"
+      - "source-control/github/mcp/**"
+      - ".github/workflows/runtime-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-import:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: claude-code-runtime
+            context: coding-assistants/claude-code/runtime
+          - name: codex-runtime
+            context: coding-assistants/codex/runtime
+          - name: kiro-runtime
+            context: coding-assistants/kiro/runtime
+          - name: aws-docs-mcp
+            context: gateway/developer-mcp-servers/aws-docs
+          - name: cfn-docs-mcp
+            context: gateway/developer-mcp-servers/cfn-docs
+          - name: github-issues-mcp
+            context: project-management/github/mcp
+          - name: github-code-mcp
+            context: source-control/github/mcp
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          tags: smoke-${{ matrix.name }}:test
+          load: true
+          push: false
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,scope=${{ matrix.name }},mode=max
+
+      - name: Smoke test main.py imports
+        run: |
+          docker run --rm --entrypoint python3 \
+            smoke-${{ matrix.name }}:test \
+            -c "import main; print('${{ matrix.name }} main.py imports OK')"
