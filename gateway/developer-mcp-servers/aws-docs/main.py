@@ -18,9 +18,8 @@ import httpx
 import markdownify
 from bs4 import BeautifulSoup
 from fastmcp import FastMCP
-from pydantic import BaseModel
-
 from log import get_logger
+from pydantic import BaseModel
 
 logger = get_logger("AWSDocsMCP")
 

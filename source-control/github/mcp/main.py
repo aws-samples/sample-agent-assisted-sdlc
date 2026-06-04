@@ -22,7 +22,6 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import boto3
 import jwt
-
 from log import get_logger
 
 logger = get_logger(__name__)

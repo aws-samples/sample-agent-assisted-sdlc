@@ -6,7 +6,6 @@
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-
 from log import get_logger
 
 logger = get_logger(__name__)
