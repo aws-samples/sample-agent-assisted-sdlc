@@ -9,9 +9,30 @@ from pipeline import execute_command
 
 from assistants.base import AssistantStrategy, _validate_identifier
 
+# Persistent location for Claude Code's per-conversation state.
+#
+# By default Claude Code writes `~/.claude/projects/<encoded-cwd>/<conv-id>.jsonl`
+# files containing the full conversation transcript. `claude --continue` reads
+# these to resume a prior conversation. The default `~/` path resolves to
+# `/home/bedrock_agentcore/` on the AgentCore microVM rootfs (containerd
+# overlay), which is reaped whenever the runtime session is stopped or
+# `maxLifetime` expires — that would lose all re-invocation continuity.
+#
+# `/mnt/workplace/` is the AgentCore session-storage NFS mount and persists
+# across microVM rebuilds for the same session ID. Setting `CLAUDE_CONFIG_DIR`
+# to a path under it relocates the entire `~/.claude/` tree there: settings,
+# `.claude.json`, `projects/`, plugins, debug logs. `claude --continue` then
+# resumes from the persistent transcript regardless of microVM lifecycle.
+#
+# Reference: https://code.claude.com/docs/en/sessions.md (Export and locate
+# session data) — `CLAUDE_CONFIG_DIR` is the documented knob for this.
+_CLAUDE_DATA_DIR = "/mnt/workplace/.claude-data"
+
 
 def _otel_attrs_prefix(session_id: str) -> str:
     return (
+        f"mkdir -p {_CLAUDE_DATA_DIR} && "
+        f"export CLAUDE_CONFIG_DIR={_CLAUDE_DATA_DIR} && "
         "export OTEL_RESOURCE_ATTRIBUTES="
         '"${OTEL_RESOURCE_ATTRIBUTES:+$OTEL_RESOURCE_ATTRIBUTES,}'
         f'session.id={session_id},gen_ai.conversation.id={session_id}" && '
