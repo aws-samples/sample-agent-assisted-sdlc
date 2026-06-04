@@ -11,6 +11,15 @@ from abc import ABC, abstractmethod
 
 from pipeline import execute_command
 
+try:
+    from errors import WorkspaceSetupError
+    from log import get_logger
+except ImportError:  # pragma: no cover - test path
+    from shared.errors import WorkspaceSetupError
+    from shared.log import get_logger
+
+logger = get_logger(__name__)
+
 _IDENTIFIER_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 _BRANCH_RE = re.compile(r"^(?!/)(?!.*//)(?!.*\.\.)[a-zA-Z0-9._/-]+(?<!/)$")
 
@@ -96,7 +105,10 @@ class AssistantStrategy(ABC):
             session_id,
             f"sh -c 'echo MOUNT: && ls -la {self.plugin_path}/ 2>&1'",
         )
-        print(f"[setup_workspace] Plugin mount check: {mount_check.get('stdout', '')}")
+        logger.info(
+            "plugin_mount_check",
+            extra={"stdout": mount_check.get("stdout", "")},
+        )
 
         result = execute_command(
             session_id,
@@ -107,12 +119,16 @@ class AssistantStrategy(ABC):
             f"cp /mnt/workplace/gitproject/settings.json /mnt/workplace/gitproject/.claude/settings.json && "
             f"chmod +x /mnt/workplace/gitproject/hooks/*.sh && echo OK'",
         )
-        print(
-            f"[setup_workspace] Copy result: {result.get('stdout', '')} | stderr: {result.get('stderr', '')}"
+        logger.info(
+            "plugin_copy_result",
+            extra={
+                "stdout": result.get("stdout", ""),
+                "stderr": result.get("stderr", ""),
+            },
         )
 
         if "OK" not in result.get("stdout", ""):
-            raise RuntimeError(
+            raise WorkspaceSetupError(
                 f"Plugin copy failed — /mnt/plugins may not be mounted. "
                 f"Mount contents: {mount_check.get('stdout', '')} | "
                 f"Copy output: {result.get('stdout', '')}"
@@ -215,7 +231,7 @@ class AssistantStrategy(ABC):
             "sh -c 'git config --global --add safe.directory /mnt/workplace/gitproject'",
             timeout=10,
         )
-        print("[refresh_for_reinvocation] Configured safe.directory")
+        logger.info("safe_directory_configured")
 
         # 2. Read current branch from the workspace and validate before shell interpolation.
         branch_result = execute_command(
@@ -224,7 +240,7 @@ class AssistantStrategy(ABC):
             timeout=10,
         )
         branch = _validate_branch(branch_result.get("stdout", "").strip())
-        print(f"[refresh_for_reinvocation] Branch: {branch}")
+        logger.info("branch_resolved", extra={"branch": branch})
 
         # 3. Fetch + reset to track origin/<branch>.
         if token is None:
@@ -253,8 +269,9 @@ class AssistantStrategy(ABC):
                 f"[ $EXIT -eq 0 ] && echo OK || echo FAILED'",
                 timeout=120,
             )
-        print(
-            f"[refresh_for_reinvocation] Fetch+reset exitCode={fetch_result.get('exitCode')}"
+        logger.info(
+            "fetch_reset_complete",
+            extra={"exit_code": fetch_result.get("exitCode")},
         )
 
         # 4. Rotate: create next invocation-N directory and update 'current' symlink.
@@ -266,8 +283,9 @@ class AssistantStrategy(ABC):
             "ln -sfn invocation-$N current && "
             "echo invocation-$N'",
         )
-        print(
-            f"[refresh_for_reinvocation] Rotated to: {rotate_result.get('stdout', '').strip()}"
+        logger.info(
+            "invocation_rotated",
+            extra={"target": rotate_result.get("stdout", "").strip()},
         )
 
         # Refresh issue.json with latest event data (includes new comments).
@@ -278,7 +296,7 @@ class AssistantStrategy(ABC):
             "/mnt/workplace/gitproject/.dev-claude/issue.json",
             json.dumps(issue).encode(),
         )
-        print("[refresh_for_reinvocation] Refreshed issue.json")
+        logger.info("issue_json_refreshed")
 
         return rotate_result
 

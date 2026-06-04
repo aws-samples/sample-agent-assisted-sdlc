@@ -13,17 +13,19 @@ Input (from setup Lambda output):
   issue: {repo_owner, repo_name, issue_number, issue_title}
 """
 
-import json
-
 from assistants import STRATEGIES
+
+try:
+    from log import get_logger, redact
+except ImportError:  # pragma: no cover - test path
+    from shared.log import get_logger, redact
+
+logger = get_logger(__name__)
 
 
 def handler(event, context):
     """Pipeline Lambda — runs the full SDLC pipeline inside the runtime."""
-    safe_event = {
-        k: v for k, v in event.items() if k not in ("token", "private_key", "secret")
-    }
-    print(f"[sdlc-pipeline] Event: {json.dumps(safe_event)}")
+    logger.info("event_received", extra={"event": redact(event)})
 
     session_id = event["session_id"]
     assistant_type = event.get("assistant_type", "claude-code")
@@ -33,15 +35,26 @@ def handler(event, context):
     strategy = STRATEGIES[assistant_type]()
 
     mode = "RE-INVOCATION" if is_reinvocation else "FIRST"
-    print(
-        f"[sdlc-pipeline] Running pipeline ({mode}): session={session_id} assistant={assistant_type}"
+    logger.info(
+        "pipeline_start",
+        extra={
+            "mode": mode,
+            "session_id": session_id,
+            "assistant": assistant_type,
+            "issue_number": issue["issue_number"],
+            "issue_title": issue["issue_title"],
+        },
     )
-    print(f"[sdlc-pipeline] Issue #{issue['issue_number']}: {issue['issue_title']}")
 
     result = strategy.run_pipeline(session_id, issue, is_reinvocation=is_reinvocation)
 
-    print(f"[sdlc-pipeline] Exit code: {result['exitCode']}")
-    print(f"[sdlc-pipeline] Output (last 500 chars): {result['stdout'][-500:]}")
+    logger.info(
+        "pipeline_complete",
+        extra={
+            "exit_code": result["exitCode"],
+            "stdout_tail": result["stdout"][-500:],
+        },
+    )
 
     return {
         "statusCode": 200,

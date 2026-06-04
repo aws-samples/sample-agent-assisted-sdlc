@@ -9,6 +9,13 @@ from pipeline import execute_command
 
 from assistants.base import AssistantStrategy, _validate_identifier
 
+try:
+    from log import get_logger
+except ImportError:  # pragma: no cover - test path
+    from shared.log import get_logger
+
+logger = get_logger(__name__)
+
 
 class CodexStrategy(AssistantStrategy):
     plugin_path = "/mnt/plugins/codex"
