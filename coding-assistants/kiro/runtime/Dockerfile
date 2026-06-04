@@ -1,7 +1,7 @@
 FROM public.ecr.aws/amazonlinux/amazonlinux:2023
 
 RUN dnf install -y --allowerasing \
-    git curl python3 python3-pip nodejs npm jq tar gzip which findutils openssh-clients \
+    git curl python3 python3-pip nodejs npm jq tar gzip which findutils openssh-clients unzip \
  && dnf clean all
 
 RUN useradd -m -d /home/agent -u 1000 agent
@@ -17,6 +17,7 @@ USER root
 RUN pip3 install --quiet fastapi==0.115.12 uvicorn==0.34.3
 
 COPY --chown=agent:agent main.py /app/main.py
+COPY --chown=agent:agent log.py /app/log.py
 
 ENV PATH="/home/agent/.local/bin:${PATH}"
 WORKDIR /app

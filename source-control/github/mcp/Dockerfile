@@ -17,6 +17,7 @@ RUN pip install --no-cache-dir boto3==1.43.18 "PyJWT[crypto]==2.13.0" "aws-opent
 
 COPY --from=build /bin/github-mcp-server /usr/local/bin/github-mcp-server
 COPY main.py /server/main.py
+COPY log.py /server/log.py
 
 WORKDIR /server
 
