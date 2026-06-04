@@ -1,7 +1,7 @@
 FROM public.ecr.aws/amazonlinux/amazonlinux:2023
 
 RUN dnf install -y --allowerasing \
-    git curl python3 python3-pip nodejs npm jq tar gzip which findutils openssh-clients \
+    git curl python3 python3-pip nodejs npm jq tar gzip which findutils openssh-clients unzip \
  && dnf clean all
 
 RUN useradd -m -d /home/agent -u 1000 agent
