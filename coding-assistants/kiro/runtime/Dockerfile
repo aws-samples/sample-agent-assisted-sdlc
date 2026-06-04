@@ -17,6 +17,7 @@ USER root
 RUN pip3 install --quiet fastapi==0.115.12 uvicorn==0.34.3
 
 COPY --chown=agent:agent main.py /app/main.py
+COPY --chown=agent:agent log.py /app/log.py
 
 ENV PATH="/home/agent/.local/bin:${PATH}"
 WORKDIR /app
