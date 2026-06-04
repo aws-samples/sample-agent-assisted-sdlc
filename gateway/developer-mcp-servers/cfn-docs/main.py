@@ -11,12 +11,8 @@ but trimmed to what this project needs.
 from __future__ import annotations
 
 import json
-import logging
 import re
 import uuid
-
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("CfnDocsMCP")
 from typing import List, Optional
 
 import httpx
@@ -24,6 +20,10 @@ import markdownify
 from bs4 import BeautifulSoup
 from fastmcp import FastMCP
 from pydantic import BaseModel
+
+from log import get_logger
+
+logger = get_logger("CfnDocsMCP")
 
 SEARCH_API_URL = "https://proxy.search.docs.aws.com/search"
 SESSION_UUID = str(uuid.uuid4())
@@ -203,7 +203,12 @@ if __name__ == "__main__":
     class LogHeadersMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
             logger.info(
-                f"[{request.method} {request.url.path}] Headers: {dict(request.headers)}"
+                "request_headers",
+                extra={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "headers": dict(request.headers),
+                },
             )
             return await call_next(request)
 
