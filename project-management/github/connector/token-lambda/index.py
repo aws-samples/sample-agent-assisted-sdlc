@@ -46,7 +46,9 @@ def get_token() -> str:
     try:
         secret = sm.get_secret_value(SecretId=secret_arn)
     except botocore.exceptions.ClientError as e:
-        raise TokenError("Failed to read GitHub App private key from Secrets Manager") from e
+        raise TokenError(
+            "Failed to read GitHub App private key from Secrets Manager"
+        ) from e
     private_key = secret["SecretString"].encode()
 
     now = int(time.time())
@@ -64,8 +66,10 @@ def get_token() -> str:
         },
     )
 
+    # urlopen URL is the fixed string built above (https://api.github.com/...).
+    # No user input reaches the URL; the scheme is hardcoded https. Audited.
     try:
-        with urllib.request.urlopen(req) as resp:
+        with urllib.request.urlopen(req) as resp:  # noqa: S310  nosec B310
             data = json.loads(resp.read())
     except urllib.error.HTTPError as e:
         raise TokenError("GitHub installation-token request failed") from e
@@ -75,7 +79,9 @@ def get_token() -> str:
     try:
         return data["token"]
     except KeyError as e:
-        raise TokenError("GitHub installation-token response missing 'token' key") from e
+        raise TokenError(
+            "GitHub installation-token response missing 'token' key"
+        ) from e
 
 
 def handler(event, context):
