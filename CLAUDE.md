@@ -44,11 +44,13 @@ Key paths:
 
 - License: Apache-2.0. All Python files have `# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.` + `# SPDX-License-Identifier: Apache-2.0` header.
 - CDK constructs use cdk-nag (AWS Solutions checks). Suppress with `NagSuppressions.addResourceSuppressions()` and a justification string.
-- Python formatting: no specific formatter enforced. Follow existing style in each file.
+- Python formatting: no specific formatter enforced. Follow existing style in each file. `ruff check` must pass.
 - TypeScript: strict mode, no implicit any.
 - Dockerfiles: pin all dependencies (`pip install pkg==x.y.z`, `npm install -g pkg@x.y.z`, `git clone --branch vX.Y.Z`).
 - MCP servers use FastMCP with streamable-http transport on port 8000.
 - Health servers use FastAPI on port 8080 (`/ping`, `/health`, `/invocations`).
+- Python logging: never call `print()`. Import `get_logger` from `shared/log.py` (or the runtime-local duplicate) and emit structured records. Use `%`-style messages (`logger.info("event %s", value)`); pass structured fields via `extra={...}`. The canonical secret-redaction helper is `redact()` from `shared/log.py`. Process-boundary catch-alls (Lambda `handler`, FastMCP tools) use `logger.exception` and return a structured error; everything else raises a named exception (`WorkspaceSetupError`, `RuntimeCommandError`, `TokenError` — see `shared/errors.py`).
+- Runtime images that build with `s3_assets.Asset({path: <runtime-dir>})` carry a duplicate `log.py` in the runtime directory. The canonical file is `project-management/shared/log.py`; each duplicate has a "DUPLICATE OF — keep in sync" banner at the top.
 
 ## Security Rules
 
@@ -96,8 +98,9 @@ codingAssistant.maxLifetime: 2400             # Must be < GitHub token expiry (3
 
 ```bash
 npm test                                              # TypeScript (12 tests): config loading, getAssistantDir
-cd project-management/shared && python3 -m pytest tests/ -v  # Python (29 tests): validation, session ID, clone, workspace
-bash test/hooks/test_hooks.sh                          # Bash hooks (43 tests): all 4 security hooks
+cd project-management/shared && python3 -m pytest tests/ -v  # Python (38 tests): validation, session ID, clone, workspace, structured logging
+bash test/hooks/test_hooks.sh                          # Bash hooks (60 tests): all security hooks
+ruff check project-management coding-assistants gateway source-control lib  # Python lint (must pass)
 ```
 
 **Coverage:**
@@ -105,6 +108,7 @@ bash test/hooks/test_hooks.sh                          # Bash hooks (43 tests): 
 - `get_session_id`: 6 cases (normal, short/long names, padding, zero, overflow)
 - `clone_repo`/`clone_private_repo`: 6 cases (public, private, token cleanup, validation)
 - `setup_workspace`: 3 cases (base64 encoding, invocation dir)
+- `get_logger` / `JsonFormatter` / `redact`: 9 cases (idempotency, JSON shape, level env var, exc_info, case-insensitive secret keys)
 - `label-governance.sh`: 7 cases (default/custom prefix, exact match)
 - `bash-guard.sh`: 17 cases (rm, force push, env dumps, exfil, redirects)
 - `secret-guard.sh`: 10 cases (AWS keys, PEM, GitHub/OpenAI/Slack tokens)

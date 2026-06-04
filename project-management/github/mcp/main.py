@@ -22,6 +22,9 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import boto3
 import jwt
+from log import get_logger
+
+logger = get_logger(__name__)
 
 GITHUB_TOKEN = None
 GO_SERVER_URL = "http://127.0.0.1:8082/mcp"
@@ -165,13 +168,13 @@ def start_go_server():
 if __name__ == "__main__":
     _required_toolsets()
     GITHUB_TOKEN = get_github_token()
-    print("[githubmcp] Token generated from GitHub App, starting Go server...")
+    logger.info("token_generated_starting_go_server")
 
     go_thread = threading.Thread(target=start_go_server, daemon=True)
     go_thread.start()
 
     time.sleep(2)
 
-    print("[githubmcp] Proxy listening on :8000")
+    logger.info("proxy_listening", extra={"port": 8000})
     server = HTTPServer(("0.0.0.0", 8000), ProxyHandler)
     server.serve_forever()

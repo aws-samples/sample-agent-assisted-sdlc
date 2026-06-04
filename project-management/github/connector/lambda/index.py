@@ -23,16 +23,23 @@ from assistants import STRATEGIES
 from github_token import get_token
 from pipeline import execute_command, stop_runtime_session
 
+# Lambda flattens shared/ into the asset root, so the import is `log`.
+# pytest sees the package layout, so the import is `shared.log`. Try the
+# flat layout first (the production Lambda case).
+try:
+    from log import get_logger, redact
+except ImportError:  # pragma: no cover - test path
+    from shared.log import get_logger, redact
+
+logger = get_logger(__name__)
+
 ALLOWED_USERS = json.loads(os.environ.get("ALLOWED_USERS", "[]"))
 ALLOWED_REPOS = json.loads(os.environ.get("ALLOWED_REPOS", "[]"))
 
 
 def handler(event, context):
     """GitHub Setup Lambda — prepares workspace or refreshes for re-invocation."""
-    safe_event = {
-        k: v for k, v in event.items() if k not in ("token", "private_key", "secret")
-    }
-    print(f"[github-setup] Event: {json.dumps(safe_event)}")
+    logger.info("event_received", extra={"event": redact(event)})
 
     assistant_type = os.environ.get("ASSISTANT_TYPE", "claude-code")
     is_private = os.environ.get("PRIVATE_REPO", "false").lower() == "true"
@@ -57,7 +64,10 @@ def handler(event, context):
 
     triggered_by = event.get("triggered_by", "")
     if ALLOWED_USERS and ALLOWED_USERS != ["*"] and triggered_by not in ALLOWED_USERS:
-        print(f"[github-setup] REJECTED: user '{triggered_by}' not in allowedUsers")
+        logger.warning(
+            "unauthorized_user",
+            extra={"triggered_by": triggered_by, "allowed_users": ALLOWED_USERS},
+        )
         return {
             "statusCode": 403,
             "error": f"User '{triggered_by}' is not authorized to trigger the pipeline.",
@@ -65,15 +75,23 @@ def handler(event, context):
 
     repo_full = f"{repo_owner}/{repo_name}"
     if ALLOWED_REPOS and repo_full not in ALLOWED_REPOS:
-        print(f"[github-setup] REJECTED: repo '{repo_full}' not in allowedRepos")
+        logger.warning(
+            "unauthorized_repo",
+            extra={"repo": repo_full, "allowed_repos": ALLOWED_REPOS},
+        )
         return {
             "statusCode": 403,
             "error": f"Repository '{repo_full}' is not authorized.",
         }
 
     session_id = strategy.get_session_id(repo_owner, repo_name, issue_number)
-    print(
-        f"[github-setup] assistant={assistant_type} session={session_id} repo={repo_full}"
+    logger.info(
+        "session_resolved",
+        extra={
+            "assistant": assistant_type,
+            "session_id": session_id,
+            "repo": repo_full,
+        },
     )
 
     # Refresh the AgentCore session's maxLifetime budget by stopping any
@@ -86,14 +104,14 @@ def handler(event, context):
     # succeed silently or return a benign no-op error from AgentCore.
     try:
         stop_runtime_session(session_id)
-        print(f"[github-setup] Stopped prior session microVM for {session_id}")
-    except Exception as e:
+        logger.info("session_stopped", extra={"session_id": session_id})
+    except Exception:
         # Common case on first invocation: no microVM exists yet, AgentCore
         # may return 404/400. Not fatal — proceed and let execute_command
         # spin up the new microVM.
-        print(
-            f"[github-setup] stop_runtime_session non-fatal error (continuing): "
-            f"{type(e).__name__}: {str(e)[:200]}"
+        logger.exception(
+            "stop_runtime_session_non_fatal",
+            extra={"session_id": session_id},
         )
 
     # Detect re-invocation: check if invocation-1/ already exists in this session
@@ -104,29 +122,39 @@ def handler(event, context):
     )
     # stdout may be empty due to API event format — fall back to FIRST
     is_reinvocation = "REINVOKE" in check.get("stdout", "")
-    print(
-        f"[github-setup] Mode: {'RE-INVOCATION' if is_reinvocation else 'FIRST INVOCATION'}"
+    logger.info(
+        "invocation_mode_detected",
+        extra={
+            "mode": "RE-INVOCATION" if is_reinvocation else "FIRST INVOCATION",
+            "session_id": session_id,
+        },
     )
 
     if is_reinvocation:
         # Re-invocation: fetch latest commits, refresh issue.json, rotate invocation dir.
         # Mint a fresh GitHub App installation token for private repos — never cache across
-        # invocations (tokens expire in ≤1 hour). For public repos, no token is needed.
-        print("[github-setup] Refreshing issue.json and rotating invocation...")
+        # invocations (tokens expire in <=1 hour). For public repos, no token is needed.
+        logger.info("refreshing_for_reinvocation", extra={"session_id": session_id})
         token = get_token() if is_private else None
         strategy.refresh_for_reinvocation(session_id, event, token=token)
     else:
         # First invocation: clone + full setup
         token = get_token() if is_private else None
-        print(f"[github-setup] Cloning repo (private={is_private})...")
+        logger.info("clone_repo_start", extra={"private": is_private})
         result = strategy.clone_repo(
             session_id, repo_owner, repo_name, private=is_private, token=token
         )
-        print(f"[github-setup] Clone: {result.get('stdout', '').strip()[-100:]}")
+        logger.info(
+            "clone_repo_done",
+            extra={"stdout_tail": result.get("stdout", "").strip()[-100:]},
+        )
 
-        print("[github-setup] Setting up workspace...")
+        logger.info("setup_workspace_start")
         result = strategy.setup_workspace(session_id, event)
-        print(f"[github-setup] Workspace: {result.get('stdout', '')}")
+        logger.info(
+            "setup_workspace_done",
+            extra={"stdout": result.get("stdout", "")},
+        )
 
     return {
         "statusCode": 200,

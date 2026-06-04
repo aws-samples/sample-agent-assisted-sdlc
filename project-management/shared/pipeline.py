@@ -13,6 +13,15 @@ from botocore.auth import SigV4Auth
 from botocore.awsrequest import AWSRequest
 from botocore.eventstream import EventStreamBuffer
 
+try:
+    from errors import RuntimeCommandError
+    from log import get_logger
+except ImportError:  # pragma: no cover - test path
+    from shared.errors import RuntimeCommandError
+    from shared.log import get_logger
+
+logger = get_logger(__name__)
+
 REGION = os.environ.get("AWS_REGION", "us-west-2")
 SERVICE = "bedrock-agentcore"
 
@@ -37,6 +46,13 @@ def execute_command(
     If blocking=True (default), streams output until the command completes.
     If blocking=False, sends the command and returns immediately without waiting.
     The command continues executing in the runtime regardless.
+
+    Raises:
+        RuntimeCommandError: When the AgentCore HTTP transport raises a
+            ``requests.RequestException`` (network error, non-2xx status).
+            A non-zero command exit code is *not* raised — it is surfaced
+            via the returned dict's ``exitCode`` key, preserving the
+            existing contract for callers that branch on exit code.
     """
     runtime_arn = _get_runtime_arn()
     encoded_arn = urllib.parse.quote(runtime_arn, safe="")
@@ -54,10 +70,13 @@ def execute_command(
     }
 
     signed_headers = sign_request("POST", url, body.encode(), headers)
-    resp = requests.post(
-        url, data=body, headers=signed_headers, timeout=timeout + 30, stream=True
-    )
-    resp.raise_for_status()
+    try:
+        resp = requests.post(
+            url, data=body, headers=signed_headers, timeout=timeout + 30, stream=True
+        )
+        resp.raise_for_status()
+    except requests.RequestException as e:
+        raise RuntimeCommandError("AgentCore execute_command HTTP failure") from e
 
     if not blocking:
         resp.close()
@@ -90,11 +109,23 @@ def execute_command(
                 elif "contentStop" in event:
                     exit_code = int(event["contentStop"].get("exitCode", -1))
             except (json.JSONDecodeError, KeyError):
+                # Expected and benign: stream chunks may straddle event
+                # frame boundaries or carry non-JSON keep-alive payloads.
+                # Per the issue #23 swallow rule: log at DEBUG with a
+                # structured field naming the cause, then continue.
+                logger.debug(
+                    "event_decode_failed",
+                    extra={"raw_chunk_len": len(chunk)},
+                )
                 continue
 
     if not stdout_parts and not stderr_parts:
-        print(
-            f"[execute_command] WARNING: No output captured. Raw events ({len(raw_events)}): {raw_events[:3]}"
+        logger.warning(
+            "no_output_captured",
+            extra={
+                "raw_event_count": len(raw_events),
+                "raw_events_head": raw_events[:3],
+            },
         )
 
     return {
@@ -117,7 +148,8 @@ def stop_runtime_session(session_id: str) -> dict:
     continue on failure — the next `execute_command` succeeds regardless.
 
     Returns: `{"status": "STOPPED", "http_status": <int>}` on success.
-    Raises: `requests.HTTPError` on non-2xx response.
+    Raises: `requests.HTTPError` on non-2xx response (caller is expected to
+    catch and continue — see Setup Lambda's handler).
 
     AWS API: `POST /runtimes/{agentRuntimeArn}/stopruntimesession`
     IAM action: `bedrock-agentcore:StopRuntimeSession`

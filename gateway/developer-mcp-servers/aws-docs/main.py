@@ -10,7 +10,6 @@ reduced to a single file so it fits the AgentCore Runtime container layout.
 
 from __future__ import annotations
 
-import logging
 import re
 import uuid
 from typing import List, Optional
@@ -19,10 +18,10 @@ import httpx
 import markdownify
 from bs4 import BeautifulSoup
 from fastmcp import FastMCP
+from log import get_logger
 from pydantic import BaseModel
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("AWSDocsMCP")
+logger = get_logger("AWSDocsMCP")
 
 SEARCH_API_URL = "https://proxy.search.docs.aws.com/search"
 RECOMMENDATIONS_API_URL = (
@@ -163,7 +162,12 @@ if __name__ == "__main__":
     class LogHeadersMiddleware(BaseHTTPMiddleware):
         async def dispatch(self, request, call_next):
             logger.info(
-                f"[{request.method} {request.url.path}] Headers: {dict(request.headers)}"
+                "request_headers",
+                extra={
+                    "method": request.method,
+                    "path": request.url.path,
+                    "headers": dict(request.headers),
+                },
             )
             return await call_next(request)
 

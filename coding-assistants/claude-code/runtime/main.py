@@ -15,6 +15,9 @@ import time
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from log import get_logger
+
+logger = get_logger(__name__)
 
 COLLECTOR_BIN = "/usr/bin/otelcol-contrib"
 COLLECTOR_CFG = "/app/otel-collector-config.yaml"
@@ -50,7 +53,7 @@ def _wait_for_collector(
 
 
 def _start_collector() -> subprocess.Popen:
-    print(f"Starting OTel collector with config {COLLECTOR_CFG}", flush=True)
+    logger.info("otel_collector_starting", extra={"config": COLLECTOR_CFG})
     return subprocess.Popen(
         [COLLECTOR_BIN, "--config", COLLECTOR_CFG],
         stdout=subprocess.PIPE,
@@ -61,17 +64,24 @@ def _start_collector() -> subprocess.Popen:
 _wire_log_headers()
 _collector_proc = _start_collector()
 if _wait_for_collector():
-    print("OTel collector ready on 127.0.0.1:4318", flush=True)
+    logger.info("otel_collector_ready", extra={"endpoint": "127.0.0.1:4318"})
 else:
-    print("WARN: OTel collector did not bind 127.0.0.1:4318 within 10s", flush=True)
+    logger.warning(
+        "otel_collector_bind_timeout",
+        extra={"endpoint": "127.0.0.1:4318", "timeout_s": 10},
+    )
     if _collector_proc.poll() is not None:
         out = (
             _collector_proc.stdout.read().decode(errors="replace")
             if _collector_proc.stdout
             else ""
         )
-        print(
-            f"Collector exited {_collector_proc.returncode}:\n{out[:2000]}", flush=True
+        logger.error(
+            "otel_collector_exited",
+            extra={
+                "returncode": _collector_proc.returncode,
+                "output_head": out[:2000],
+            },
         )
 
 app = FastAPI()
@@ -89,5 +99,5 @@ async def invocations():
 
 
 if __name__ == "__main__":
-    print("Agent health server starting on port 8080", flush=True)
+    logger.info("health_server_starting", extra={"port": 8080})
     uvicorn.run(app, host="0.0.0.0", port=8080)

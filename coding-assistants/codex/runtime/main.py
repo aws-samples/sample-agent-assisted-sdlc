@@ -6,6 +6,9 @@
 import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
+from log import get_logger
+
+logger = get_logger(__name__)
 
 app = FastAPI()
 
@@ -22,5 +25,5 @@ async def invocations():
 
 
 if __name__ == "__main__":
-    print("Agent health server starting on port 8080", flush=True)
+    logger.info("health_server_starting", extra={"port": 8080})
     uvicorn.run(app, host="0.0.0.0", port=8080)
