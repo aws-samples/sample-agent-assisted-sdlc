@@ -10,7 +10,13 @@ from unittest.mock import patch
 import pytest
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from assistants.base import AssistantStrategy, _validate_branch, _validate_identifier
+from assistants.base import (  # noqa: E402
+    _CHUNK_BYTES,
+    AssistantStrategy,
+    _validate_branch,
+    _validate_identifier,
+    _write_file_chunked,
+)
 
 # --- _validate_identifier tests ---
 
@@ -213,7 +219,9 @@ class TestValidateBranch:
         assert _validate_branch("release/v1.2.3") == "release/v1.2.3"
 
     def test_bugfix_with_underscore_and_dash(self):
-        assert _validate_branch("bugfix/PROJ-42_quick-fix") == "bugfix/PROJ-42_quick-fix"
+        assert (
+            _validate_branch("bugfix/PROJ-42_quick-fix") == "bugfix/PROJ-42_quick-fix"
+        )
 
     def test_dotted_segment(self):
         assert _validate_branch("hotfix.urgent") == "hotfix.urgent"
@@ -338,9 +346,7 @@ class TestRefreshForReinvocation:
         """Private path: credential-helper-wrapped fetch with token NEVER in argv."""
         mock_exec.side_effect = _branch_stdout_then_ok("main")
 
-        self.strategy.refresh_for_reinvocation(
-            "session-1", self.issue, token="t_test"
-        )
+        self.strategy.refresh_for_reinvocation("session-1", self.issue, token="t_test")
 
         calls = [c[0][1] for c in mock_exec.call_args_list]
         # Fetch+reset is the third call (after safe.directory, rev-parse).
@@ -375,7 +381,11 @@ class TestRefreshForReinvocation:
         responses = [
             {"exitCode": 0, "stdout": "", "stderr": ""},  # safe.directory
             {"exitCode": 0, "stdout": "main\n", "stderr": ""},  # rev-parse
-            {"exitCode": 128, "stdout": "FAILED", "stderr": "auth"},  # fetch+reset fails
+            {
+                "exitCode": 128,
+                "stdout": "FAILED",
+                "stderr": "auth",
+            },  # fetch+reset fails
             {"exitCode": 0, "stdout": "invocation-2", "stderr": ""},  # rotate
             {"exitCode": 0, "stdout": "OK", "stderr": ""},  # issue.json
         ]
@@ -424,11 +434,126 @@ class TestRefreshForReinvocation:
 
         calls = [c[0][1] for c in mock_exec.call_args_list]
         # Positional check: rev-parse < fetch+reset < rotate < issue.json
-        rev_parse_idx = next(
-            i for i, c in enumerate(calls) if "git rev-parse" in c
-        )
+        rev_parse_idx = next(i for i, c in enumerate(calls) if "git rev-parse" in c)
         fetch_idx = next(i for i, c in enumerate(calls) if "git fetch origin" in c)
         rotate_idx = next(i for i, c in enumerate(calls) if "ln -sfn" in c)
         issue_idx = next(i for i, c in enumerate(calls) if "issue.json" in c)
 
         assert rev_parse_idx < fetch_idx < rotate_idx < issue_idx
+
+
+# --- _write_file_chunked tests ---
+
+
+class TestWriteFileChunked:
+    """Verify the chunked-write helper splits large payloads correctly.
+
+    Issue #23 hot fix: AgentCore's commands API rejects single commands whose
+    base64 payload is too large; the helper splits raw bytes on 3-byte
+    boundaries so each chunk's base64 is independently decodable, then writes
+    the first chunk with `>` and the rest with `>>`.
+    """
+
+    @patch("assistants.base.execute_command")
+    def test_empty_content_truncates(self, mock_exec):
+        """Empty content writes a single `: > path` truncate command, no base64."""
+        _write_file_chunked("session-1", "/mnt/test/empty.json", b"")
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        assert len(calls) == 1
+        assert ": > /mnt/test/empty.json" in calls[0]
+        assert "base64" not in calls[0]
+
+    @patch("assistants.base.execute_command")
+    def test_small_content_single_chunk_truncating_redirect(self, mock_exec):
+        """Content < CHUNK_BYTES fits in one command using `>` (truncate)."""
+        content = b'{"k": "v"}'  # 10 bytes
+        _write_file_chunked("session-1", "/mnt/test/small.json", content)
+
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        assert len(calls) == 1
+        assert " > /mnt/test/small.json" in calls[0]
+        assert " >> " not in calls[0]
+        assert "base64 -d" in calls[0]
+
+    @patch("assistants.base.execute_command")
+    def test_large_content_multiple_chunks_with_append(self, mock_exec):
+        """Content > CHUNK_BYTES splits into N commands: first `>`, rest `>>`."""
+        # 3x the chunk size → at least 3 commands.
+        content = b"x" * (_CHUNK_BYTES * 3 + 100)
+        _write_file_chunked("session-1", "/mnt/test/large.json", content)
+
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        assert len(calls) >= 3, f"Expected ≥3 chunks, got {len(calls)}"
+
+        # First chunk truncates with `>`.
+        assert " > /mnt/test/large.json" in calls[0]
+        assert " >> " not in calls[0]
+
+        # Remaining chunks append with `>>`.
+        for i, call in enumerate(calls[1:], start=1):
+            assert (
+                " >> /mnt/test/large.json" in call
+            ), f"chunk {i} missing append redirect"
+            assert " > /mnt/test/large.json" not in call.replace(
+                " >> /mnt/test/large.json", ""
+            ), f"chunk {i} has unexpected truncate redirect"
+
+    @patch("assistants.base.execute_command")
+    def test_chunks_decode_and_concatenate_to_original(self, mock_exec):
+        """Each chunk's base64 is independently decodable; concatenating decoded
+        bytes reproduces the original content. This is the property that makes
+        the chunked-write safe across the AgentCore command boundary."""
+        import base64 as _b64
+        import re
+
+        # Use a payload at a non-3-aligned size (12345 bytes) to catch any
+        # partial-chunk handling bugs.
+        original = bytes(range(256)) * 50  # 12,800 bytes — not a multiple of anything
+        original = original[:12345]
+
+        _write_file_chunked("session-1", "/mnt/test/payload.bin", original)
+
+        # Extract the base64 token from each `echo <b64> | base64 -d` call.
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        b64_re = re.compile(r"echo ([A-Za-z0-9+/=]+) \| base64")
+        decoded_chunks = []
+        for c in calls:
+            m = b64_re.search(c)
+            assert m, f"could not extract base64 from: {c[:100]}"
+            decoded_chunks.append(_b64.b64decode(m.group(1)))
+
+        # Concatenation of independently-decoded chunks must equal the original.
+        assert b"".join(decoded_chunks) == original
+
+    @patch("assistants.base.execute_command")
+    def test_chunk_size_alignment(self, mock_exec):
+        """All chunks except the last are aligned to 3 bytes (so each chunk's
+        base64 has no `=` padding except possibly the final chunk)."""
+        import base64 as _b64
+        import re
+
+        content = b"a" * (_CHUNK_BYTES * 2 + 5)  # 2 full chunks + a 5-byte remainder
+        _write_file_chunked("session-1", "/mnt/test/p.json", content)
+
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        b64_re = re.compile(r"echo ([A-Za-z0-9+/=]+) \| base64")
+        chunks = []
+        for c in calls:
+            m = b64_re.search(c)
+            chunks.append(_b64.b64decode(m.group(1)))
+
+        # Every chunk except possibly the last must be a multiple of 3 bytes.
+        for i, ch in enumerate(chunks[:-1]):
+            assert len(ch) % 3 == 0, f"chunk {i} length {len(ch)} not 3-byte aligned"
+
+    @patch("assistants.base.execute_command")
+    def test_path_appears_in_every_command(self, mock_exec):
+        """All chunk commands target the same path — the helper does not split
+        writes across paths or accidentally write to a different file."""
+        content = b"y" * (_CHUNK_BYTES * 3)
+        path = "/mnt/workplace/gitproject/.dev-claude/issue.json"
+        _write_file_chunked("session-1", path, content)
+
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        for c in calls:
+            assert path in c, f"command missing target path: {c[:120]}"

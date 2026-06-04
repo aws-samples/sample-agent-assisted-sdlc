@@ -14,6 +14,13 @@ from pipeline import execute_command
 _IDENTIFIER_RE = re.compile(r"^[a-zA-Z0-9._-]+$")
 _BRANCH_RE = re.compile(r"^(?!/)(?!.*//)(?!.*\.\.)[a-zA-Z0-9._/-]+(?<!/)$")
 
+# Conservative per-command chunk size for `_write_file_chunked`. Each chunk's
+# base64 expands to ~4/3 the raw size; with the `echo … | base64 -d >> path`
+# wrapping plus AgentCore JSON request envelope, 6 KB raw stays well under the
+# `commands` API request-size limit (failure observed for issue.json ~43 KB raw
+# → ~58 KB base64 in a single command, see PR for #23 hot fix).
+_CHUNK_BYTES = 6 * 1024
+
 
 def _validate_identifier(value: str, field_name: str) -> str:
     if not value or not _IDENTIFIER_RE.match(value):
@@ -32,6 +39,41 @@ def _validate_branch(value: str) -> str:
     if not value or not _BRANCH_RE.match(value):
         raise ValueError(f"Invalid branch name: {value!r}")
     return value
+
+
+def _write_file_chunked(session_id: str, abs_path: str, content: bytes) -> None:
+    """Write `content` to `abs_path` in the runtime via chunked base64 commands.
+
+    The naive `echo <base64> | base64 -d > path` pattern fails for large
+    payloads because AgentCore's commands API has a per-request size limit.
+    Issue #23's re-invocation hit this when issue.json grew to ~43 KB
+    (~58 KB base64) — AgentCore returned HTTP 400 for the single oversized
+    command.
+
+    This helper splits the raw bytes into 3-byte-aligned chunks (so each
+    chunk's base64 is independently decodable; no partial 4-char groups to
+    reassemble across chunks), then writes the first chunk with `>` and
+    remaining chunks with `>>`.
+
+    Caller is responsible for passing a fixed / pre-validated `abs_path`.
+    """
+    if not content:
+        execute_command(session_id, f"sh -c ': > {abs_path}'", timeout=10)
+        return
+
+    # 3-byte alignment so each chunk's base64 is self-contained.
+    aligned = (_CHUNK_BYTES // 3) * 3
+    first = True
+    for i in range(0, len(content), aligned):
+        chunk = content[i : i + aligned]
+        chunk_b64 = base64.b64encode(chunk).decode()
+        redir = ">" if first else ">>"
+        execute_command(
+            session_id,
+            f"sh -c 'echo {chunk_b64} | base64 -d {redir} {abs_path}'",
+            timeout=15,
+        )
+        first = False
 
 
 class AssistantStrategy(ABC):
@@ -76,10 +118,11 @@ class AssistantStrategy(ABC):
                 f"Copy output: {result.get('stdout', '')}"
             )
 
-        issue_b64 = base64.b64encode(json.dumps(issue).encode()).decode()
-        execute_command(
+        # Chunked write to survive large issue.json payloads — see _write_file_chunked.
+        _write_file_chunked(
             session_id,
-            f"sh -c 'echo {issue_b64} | base64 -d > /mnt/workplace/gitproject/.dev-claude/issue.json'",
+            "/mnt/workplace/gitproject/.dev-claude/issue.json",
+            json.dumps(issue).encode(),
         )
 
         project_context = json.dumps(
@@ -89,10 +132,10 @@ class AssistantStrategy(ABC):
                 "issue_number": issue.get("issue_number", 0),
             }
         )
-        project_b64 = base64.b64encode(project_context.encode()).decode()
-        execute_command(
+        _write_file_chunked(
             session_id,
-            f"sh -c 'echo {project_b64} | base64 -d > /mnt/workplace/gitproject/.dev-claude/project.json'",
+            "/mnt/workplace/gitproject/.dev-claude/project.json",
+            project_context.encode(),
         )
 
         # Create numbered invocation directory and symlink 'current' to it
@@ -227,11 +270,13 @@ class AssistantStrategy(ABC):
             f"[refresh_for_reinvocation] Rotated to: {rotate_result.get('stdout', '').strip()}"
         )
 
-        # Refresh issue.json with latest event data (includes new comments)
-        issue_b64 = base64.b64encode(json.dumps(issue).encode()).decode()
-        execute_command(
+        # Refresh issue.json with latest event data (includes new comments).
+        # Chunked write — issue.json grows past AgentCore's per-command size
+        # limit on heavy-comment re-invocations (issue #23 hit this at ~43 KB).
+        _write_file_chunked(
             session_id,
-            f"sh -c 'echo {issue_b64} | base64 -d > /mnt/workplace/gitproject/.dev-claude/issue.json'",
+            "/mnt/workplace/gitproject/.dev-claude/issue.json",
+            json.dumps(issue).encode(),
         )
         print("[refresh_for_reinvocation] Refreshed issue.json")
 
