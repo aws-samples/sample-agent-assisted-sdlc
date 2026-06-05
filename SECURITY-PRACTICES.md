@@ -267,10 +267,10 @@ How each GitHub MCP runtime is scoped, how those scopes map to gateway target na
 
 | MCP runtime | CDK file (line) | `GITHUB_TOOLSETS` value | Gateway target name | Effective tool prefix the agent sees |
 |---|---|---|---|---|
-| project-management | [`lib/nested/project-management-stack.ts:44`](lib/nested/project-management-stack.ts) | `issues` (default) | `github-issues` | `mcp__gateway__github-issues___*` |
-| source-control | [`lib/nested/source-control-stack.ts:33,51`](lib/nested/source-control-stack.ts) | `repos,pull_requests,context,actions` (default) | `github-code` | `mcp__gateway__github-code___*` |
+| project-management | [`lib/nested/project-management-stack.ts:44`](lib/nested/project-management-stack.ts) | `issues` (default) | `project-management` | `mcp__gateway__project-management___*` |
+| source-control | [`lib/nested/source-control-stack.ts:33,51`](lib/nested/source-control-stack.ts) | `repos,pull_requests,context,actions` (default) | `source-control` | `mcp__gateway__source-control___*` |
 
-The gateway target names are registered in [`lib/sdlc-stack.ts:71`](lib/sdlc-stack.ts) (`github-code`) and [`lib/sdlc-stack.ts:91`](lib/sdlc-stack.ts) (`github-issues`), then handed to [`registerGatewayTarget()`](lib/utils.ts) by [`lib/nested/gateway-stack.ts:44`](lib/nested/gateway-stack.ts). The `mcp__gateway__<target>___*` prefix is the AgentCore Gateway naming convention — Claude Code sees one flat tool namespace and the gateway routes by prefix.
+The gateway target names are registered in [`lib/sdlc-stack.ts:71`](lib/sdlc-stack.ts) (`source-control`) and [`lib/sdlc-stack.ts:91`](lib/sdlc-stack.ts) (`project-management`), then handed to [`registerGatewayTarget()`](lib/utils.ts) by [`lib/nested/gateway-stack.ts:44`](lib/nested/gateway-stack.ts). The `mcp__gateway__<target>___*` prefix is the AgentCore Gateway naming convention — Claude Code sees one flat tool namespace and the gateway routes by prefix. Target names are platform-agnostic; the concrete connector (GitHub, GitLab, etc.) is an implementation detail behind the target.
 
 ### Rationale per toolset assignment
 
@@ -296,7 +296,7 @@ What blocks an unintended GitHub tool call, in the order the call traverses:
 
 1. **CDK env var (`GITHUB_TOOLSETS`)** — Set per-runtime in [`lib/nested/project-management-stack.ts:44`](lib/nested/project-management-stack.ts) and [`lib/nested/source-control-stack.ts:51`](lib/nested/source-control-stack.ts), with the config-level default in [`sdlc-config.template.yaml`](sdlc-config.template.yaml). The runtime container starts with this in its environment and never advertises a tool outside the scoped toolset.
 2. **`github-mcp-server --toolsets`** — The Go binary reads `$GITHUB_TOOLSETS` in [`source-control/github/mcp/entrypoint.sh:18`](source-control/github/mcp/entrypoint.sh) and [`project-management/github/mcp/entrypoint.sh:18`](project-management/github/mcp/entrypoint.sh) and only registers MCP methods for the listed toolsets. Tools outside the list don't exist on the wire.
-3. **Gateway target name routing** — Targets are registered with the names `github-code` and `github-issues` in [`lib/sdlc-stack.ts:71,91`](lib/sdlc-stack.ts). The gateway routes a call by its name prefix (`mcp__gateway__github-code___*` → source-control runtime, `mcp__gateway__github-issues___*` → project-management runtime). A call whose prefix doesn't match a registered target is rejected before it hits any runtime.
+3. **Gateway target name routing** — Targets are registered with the names `source-control` and `project-management` in [`lib/sdlc-stack.ts:71,91`](lib/sdlc-stack.ts). The gateway routes a call by its name prefix (`mcp__gateway__source-control___*` → source-control runtime, `mcp__gateway__project-management___*` → project-management runtime). A call whose prefix doesn't match a registered target is rejected before it hits any runtime.
 4. **Plugin `permissions.deny`** — [`coding-assistants/claude-code/plugin/settings.json`](coding-assistants/claude-code/plugin/settings.json) keeps a denylist for tools that the toolset advertises but the agent should never call (repo creation, force-merge, identity lookups, full-text issue search). Defense in depth — if a future toolset broadening accidentally advertises one of these, the plugin still blocks it.
 5. **Runtime hooks** — [`hooks/scope-guard.sh`](coding-assistants/claude-code/plugin/hooks/scope-guard.sh) and [`hooks/label-governance.sh`](coding-assistants/claude-code/plugin/hooks/label-governance.sh) run as `PreToolUse` hooks (wired in [`coding-assistants/claude-code/plugin/settings.json`](coding-assistants/claude-code/plugin/settings.json)) and enforce per-issue scoping (the call must target the owner/repo/issue/branch in `project.json`) and label rules (the agent cannot set `agent:start`). These fail closed: if `project.json` is missing, every MCP call is blocked.
 
@@ -314,7 +314,7 @@ What blocks an unintended GitHub tool call, in the order the call traverses:
 
 - [`lib/nested/project-management-stack.ts`](lib/nested/project-management-stack.ts) — sets `GITHUB_TOOLSETS=issues` on the project-management runtime.
 - [`lib/nested/source-control-stack.ts`](lib/nested/source-control-stack.ts) — sets `GITHUB_TOOLSETS=repos,pull_requests,context,actions` on the source-control runtime, both as the runtime env var and on the GitHub connector.
-- [`lib/sdlc-stack.ts`](lib/sdlc-stack.ts) — declares the `github-code` and `github-issues` gateway target names that produce the agent-facing tool prefixes.
+- [`lib/sdlc-stack.ts`](lib/sdlc-stack.ts) — declares the `source-control` and `project-management` gateway target names that produce the agent-facing tool prefixes.
 - [`lib/nested/gateway-stack.ts`](lib/nested/gateway-stack.ts) — registers each target on the gateway via `registerGatewayTarget()`.
 - [`lib/utils.ts`](lib/utils.ts) — defines `registerGatewayTarget()` and `buildRuntimeEndpoint()`.
 - [`sdlc-config.template.yaml`](sdlc-config.template.yaml) — config-level defaults for `sourceControl.github.toolsets` and `projectManagement.github.toolsets`.
@@ -329,7 +329,7 @@ What blocks an unintended GitHub tool call, in the order the call traverses:
 | Hook | File | Trigger Pattern | Blocks |
 |------|------|-----------------|--------|
 | Label Governance | `label-governance.sh` | `issue_write` | Setting `{prefix}:start` label (prefix from `$SDLC_LABEL_PREFIX`, default: `agent`) |
-| Scope Guard | `scope-guard.sh` | `github-code___.*`, `github-issues___.*` | Wrong owner/repo/issue/branch |
+| Scope Guard | `scope-guard.sh` | `source-control___.*`, `project-management___.*` | Wrong owner/repo/issue/branch |
 | Secret Guard | `secret-guard.sh` | `Write`, `Edit`, `push_files` | AWS keys, private keys, GitHub/OpenAI/Slack tokens |
 | Bash Guard | `bash-guard.sh` | `Bash` | rm -rf, force push, env dumps, curl exfil, writes outside workspace |
 
