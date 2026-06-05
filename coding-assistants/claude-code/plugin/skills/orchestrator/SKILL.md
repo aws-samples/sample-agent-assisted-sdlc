@@ -32,6 +32,22 @@ RE-INVOCATION DETECTION:
   The current invocation writes to ./.dev-claude/current/ (symlinked to latest invocation-N).
   The explore stage will read previous invocations + new comments and write feedback.md.
 
+### RE-INVOCATION VERIFICATION (failure mode B — runs for BOTH paths, before complexity)
+
+Mirror of pr/SKILL.md verification block — keep in sync.
+
+This block runs on every re-invocation (./.dev-claude/invocation-1/ exists) BEFORE the complexity check, so it gates both PATH A and PATH B. Its only job is to block the false "already merged, exit cleanly" decision when no PR actually exists, and to reconcile the run against real GitHub state. It MUST NOT short-circuit an open PR with no new comments — open PRs always fall through to the existing re-invocation flow.
+
+1. Resolve the branch name `feat/issue-{number}` from project.json.
+2. Find the PR for this branch. Call `mcp__gateway__github-code___list_pull_requests` with `head={owner}:feat/issue-{number}` (REST-filtered fast path). If that returns empty or errors, call `mcp__gateway__github-code___list_pull_requests` again listing open PRs and match `headRefName == feat/issue-{number}` client-side (safety-net fallback).
+3. If a PR is found, call `mcp__gateway__github-code___pull_request_read` and read `state`, `mergedAt`, and `mergeStateStatus`.
+4. Log `state`, `mergedAt`, and `mergeStateStatus` as diagnostic context. `mergeStateStatus` (`BLOCKED`, `DIRTY`, `BEHIND`) is logged ONLY — it MUST NOT drive any branching decision.
+5. Apply the four-way decision using ONLY `state` + `mergedAt`:
+   - PR exists AND `mergedAt` is not null → already merged. Post a comment via `mcp__gateway__github-issues___add_issue_comment`, set labels `["agent:pr-completed"]` via `mcp__gateway__github-issues___issue_write`, and exit cleanly.
+   - PR exists AND `state == OPEN` AND `mergedAt` is null → fall through to the existing re-invocation flow (feedback.md → explore → implement → pr). Do NOT change labels. Do NOT short-circuit on "no new comments".
+   - PR exists AND `state == CLOSED` AND `mergedAt` is null → closed without merge. Post a comment via `mcp__gateway__github-issues___add_issue_comment`, set labels `["agent:error"]`, and exit.
+   - No PR exists → MUST NOT exit with success. Continue to the implement+pr flow (or surface that local commits exist with no PR). Never report "already merged".
+
 COMPLEXITY CHECK — decide from the most recent intent:
 
   RE-INVOCATION (./.dev-claude/invocation-1/ exists):
@@ -66,9 +82,9 @@ COMPLEXITY CHECK — decide from the most recent intent:
       - Clear, unambiguous spec with no design decisions
       - Small feature: add a route, fix a bug, add a test, rename something
 
-═══════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════
 PATH A — SIMPLE ISSUE (do everything yourself, no subagents):
-═══════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════
 
 Path A inlines the same git-staging and push rules as the implement-agent
 and pr-agent skills used by Path B. Keep them in sync — when you fix one,
@@ -109,6 +125,21 @@ Execute EVERY step in order. Do not skip or reorder.
    - On 422 "branch does not exist", first call
      `mcp__gateway__github-code___create_branch` with
      branch=feat/issue-{number}, ref="main", then retry push_files
+8b. PR-existence re-check before create_pull_request (Mirror of the
+    RE-INVOCATION VERIFICATION block above and pr/SKILL.md — keep in sync).
+    PATH A must not blindly open a second PR for a branch that already has one.
+    - Call `mcp__gateway__github-code___list_pull_requests` with
+      `head={owner}:feat/issue-{number}` (REST-filtered fast path); on empty or
+      error, list open PRs and match `headRefName == feat/issue-{number}`
+      client-side (fallback).
+    - If a PR is found, call `mcp__gateway__github-code___pull_request_read` and
+      read `state`, `mergedAt`, and `mergeStateStatus` (log `mergeStateStatus` as
+      diagnostic context only — do NOT branch on it). If `state == OPEN` and
+      `mergedAt` is null, SKIP step 9 (do not create a duplicate) and proceed to
+      step 10. If `mergedAt` is not null, set labels `["agent:pr-completed"]`,
+      comment, and exit. If `state == CLOSED` and `mergedAt` is null, set labels
+      `["agent:error"]`, comment, and exit.
+    - If no PR is found, proceed to step 9 and create it.
 9. Call mcp__gateway__github-code___create_pull_request:
      owner/repo from project.json
      title: "feat: {title} (#{number})"
@@ -121,9 +152,9 @@ Execute EVERY step in order. Do not skip or reorder.
 11. Post a comment on the issue with invocation summary (duration, stages completed).
 12. Exit.
 
-═══════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════
 PATH B — COMPLEX ISSUE (delegate to subagents via Agent tool):
-═══════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════
 
 You become a pure orchestrator. Do NOT call Read, Write, Edit, Bash, or MCP
 tools directly. Your only allowed tool is Agent.
@@ -138,9 +169,9 @@ PIPELINE:
    Agent(prompt="Read the file skills/implement/SKILL.md and apply the critique from .dev-claude/current/critique.md for issue #{number}. Owner: {owner}, Repo: {repo}.")
 6. Agent(prompt="Read the file skills/pr/SKILL.md and follow its instructions for issue #{number}. Owner: {owner}, Repo: {repo}.")
 
-═══════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════
 EXIT CONDITIONS (both paths):
-═══════════════════════════════════════════════════════════
+══════════════════════════════════════════════════════════════
 
 - clarification-agent halted with unanswered questions → stop after stage 2 (Path B only).
 - PR created → exit cleanly.
