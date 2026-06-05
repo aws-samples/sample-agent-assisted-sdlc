@@ -1,4 +1,7 @@
-# Git Staging Rules
+---
+name: git-staging
+description: Git staging rules that prevent committing orchestrator infrastructure files
+---
 
 NEVER run `git add -A` or `git add .`. The working tree contains orchestrator infrastructure that MUST NOT be committed:
 `.dev-claude/`, `hooks/`, `skills/`, `.claude/`, `.claude-plugin/`, `settings.json`, `.mcp.json`, `agentcore-test.txt`

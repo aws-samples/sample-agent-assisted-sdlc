@@ -1,4 +1,7 @@
-# PR-Existence Verification
+---
+name: pr-verification
+description: PR-existence verification procedure that prevents duplicate PRs and false "already merged" reports
+---
 
 Run this procedure before any action that reports "already merged" or creates a PR.
 Uses ONLY `state` + `mergedAt` for control flow; `mergeStateStatus` is diagnostic-only.

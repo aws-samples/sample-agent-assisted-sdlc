@@ -40,10 +40,10 @@ STEP 2: Write ./.dev-claude/current/pr.md summarising what was built. Then post 
 as a comment on the issue via mcp__gateway__github-issues___add_issue_comment.
 Prefix with `### PR Summary\n\n`.
 
-Follow [shared/FORMATTING.md](../shared/FORMATTING.md) for all markdown output.
+Follow the formatting skill for all markdown output.
 
 STEP 2b: PR-existence verification (defense-in-depth, late gate).
-Follow [shared/PR-VERIFICATION.md](../shared/PR-VERIFICATION.md).
+Follow the pr-verification skill procedure.
 If open PR exists → skip STEP 3, proceed to STEP 4. If no PR → STEP 3.
 
 STEP 3: Call mcp__gateway__github-code___create_pull_request:

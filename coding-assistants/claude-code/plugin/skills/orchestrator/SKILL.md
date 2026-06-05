@@ -34,7 +34,7 @@ RE-INVOCATION DETECTION:
 
 ### RE-INVOCATION VERIFICATION (failure mode B — runs for BOTH paths, before complexity)
 
-Follow the procedure in [shared/PR-VERIFICATION.md](../shared/PR-VERIFICATION.md). Open PRs fall through to the re-invocation flow — do NOT short-circuit on "no new comments".
+Follow the pr-verification skill procedure. Open PRs fall through to the re-invocation flow — do NOT short-circuit on "no new comments".
 
 COMPLEXITY CHECK — decide from the most recent intent:
 
@@ -80,7 +80,7 @@ Execute EVERY step in order. Do not skip or reorder.
    (if it exists: git checkout feat/issue-{number})
 4. Implement the feature following existing patterns.
 5. Run tests — fix failures before committing.
-6. Stage and commit per [shared/GIT-STAGING.md](../shared/GIT-STAGING.md).
+6. Stage and commit per the git-staging skill.
    `git commit -m "feat: {description} (#{number})"`
 7. If changes affected project structure/dependencies/conventions, update CLAUDE.md.
 8. Push via the MCP gateway — direct `git push` fails because the runtime
@@ -98,7 +98,7 @@ Execute EVERY step in order. Do not skip or reorder.
    - On 422 "branch does not exist", first call
      `mcp__gateway__github-code___create_branch` with
      branch=feat/issue-{number}, ref="main", then retry push_files
-8b. PR-existence re-check per [shared/PR-VERIFICATION.md](../shared/PR-VERIFICATION.md).
+8b. PR-existence re-check per the pr-verification skill.
     If open PR exists → skip step 9, proceed to step 10. If no PR → step 9.
 9. Call mcp__gateway__github-code___create_pull_request:
      owner/repo from project.json
@@ -118,13 +118,13 @@ You become a pure orchestrator. Do NOT call Read, Write, Edit, Bash, or MCP
 tools directly. Your only allowed tool is Agent.
 
 PIPELINE:
-1. Agent(prompt="Read the file skills/explore/SKILL.md and follow its instructions for issue #{number}. Owner: {owner}, Repo: {repo}.")
+1. Agent(prompt="Explore codebase for issue #{number}. Owner: {owner}, Repo: {repo}. Read .dev-claude/issue.json and .dev-claude/project.json.", agent_type="explore")
 2. Agent(prompt="Read the file skills/clarification/SKILL.md and follow its instructions for issue #{number}. Owner: {owner}, Repo: {repo}.")
    After this returns, if .dev-claude/current/questions.md lacks an ANSWERED marker, STOP.
-3. Agent(prompt="Read the file skills/implement/SKILL.md and follow its instructions for issue #{number}. Owner: {owner}, Repo: {repo}.")
-4. Agent(prompt="Read the file skills/critique/SKILL.md and follow its instructions for issue #{number}. Owner: {owner}, Repo: {repo}.")
+3. Agent(prompt="Implement issue #{number}. Owner: {owner}, Repo: {repo}. Read .dev-claude/issue.json, .dev-claude/project.json, and .dev-claude/current/explore.md.", agent_type="implement")
+4. Agent(prompt="Critique implementation for issue #{number}. Owner: {owner}, Repo: {repo}. Read .dev-claude/issue.json and .dev-claude/current/explore.md. Run git diff main...HEAD.", agent_type="critique")
 5. If .dev-claude/current/critique.md is not "LGTM: no changes needed":
-   Agent(prompt="Read the file skills/implement/SKILL.md and apply the critique from .dev-claude/current/critique.md for issue #{number}. Owner: {owner}, Repo: {repo}.")
+   Agent(prompt="Apply critique from .dev-claude/current/critique.md for issue #{number}. Owner: {owner}, Repo: {repo}.", agent_type="implement")
 6. Agent(prompt="Read the file skills/pr/SKILL.md and follow its instructions for issue #{number}. Owner: {owner}, Repo: {repo}.")
 
 EXIT CONDITIONS (both paths):

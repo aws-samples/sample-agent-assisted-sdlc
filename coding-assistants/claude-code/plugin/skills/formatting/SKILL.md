@@ -1,4 +1,7 @@
-# Markdown Formatting Rules
+---
+name: formatting
+description: Markdown formatting rules for issue comments, PR bodies, and .md files written by the pipeline
+---
 
 Apply to all `.md` files you write AND every issue/PR comment you post.
 Ignore for code blocks, tables, and bulleted lists.
