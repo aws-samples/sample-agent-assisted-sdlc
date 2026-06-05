@@ -3,10 +3,6 @@
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__gateway__project-management___issue_write",
-        "hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/label-governance.sh", "timeout": 5}]
-      },
-      {
         "matcher": "mcp__gateway__source-control___.*",
         "hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scope-guard.sh", "timeout": 5}]
       },
