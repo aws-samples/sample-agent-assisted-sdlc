@@ -35,6 +35,8 @@ codingAssistant:
 # ─── Source Control ────────────────────────────────────────────────────────────
 # Platform where code lives. Deploys an MCP server with code operations
 # (branch, push, PR) and provides credentials for cloning.
+# Gateway target name: "source-control" → agent sees mcp__gateway__source-control___*
+# Switching type requires a connector at source-control/<type>/mcp/ and a CDK sub-construct.
 sourceControl:
   type: github                    # github | gitlab (future)
   github:
@@ -52,6 +54,8 @@ sourceControl:
 # ─── Project Management ───────────────────────────────────────────────────────
 # Platform for issue tracking. Deploys an MCP server with issue operations
 # and a connector that triggers the pipeline on events (e.g., label added).
+# Gateway target name: "project-management" → agent sees mcp__gateway__project-management___*
+# Switching type requires a connector at project-management/<type>/mcp/ and a CDK sub-construct.
 projectManagement:
   type: github                    # github | jira (future)
   github:

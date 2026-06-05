@@ -23,6 +23,14 @@ export class ProjectManagementStack extends cdk.Stack {
     super(scope, id, props);
 
     const { config, vpc, securityGroup, privateKeySecretArn } = props;
+
+    if (config.projectManagement.type !== "github") {
+      throw new Error(
+        `Unsupported projectManagement.type: "${config.projectManagement.type}". ` +
+        `Only "github" is implemented. Add a connector under project-management/<type>/mcp/.`,
+      );
+    }
+
     const ghConfig = config.sourceControl.github!;
     const pmConfig = config.projectManagement.github;
 
