@@ -17,7 +17,11 @@ from assistants.base import (  # noqa: E402
     _validate_identifier,
     _write_file_chunked,
 )
-from errors import WorkspaceSetupError  # noqa: E402
+from errors import (  # noqa: E402
+    BranchProbeError,
+    LocalOnlyBranchError,
+    WorkspaceSetupError,
+)
 
 # --- _validate_identifier tests ---
 
@@ -283,17 +287,38 @@ def _branch_stdout_then_ok(branch: str = "feat/issue-17"):
       2. .git probe                   → return {"stdout": "OK\n"} (repo present)
       3. git rev-parse --abbrev-ref   → return {"stdout": "<branch>\n"}
       4. fetch + reset                → return OK
+      4a. ls-remote probe             → ONLY when branch != "main"; returns a
+                                        non-empty ref line so the probe short-circuits
+                                        (branch is on origin, no divergence).
       5. rotate                       → return invocation-2
       6. issue.json write             → return OK
+
+    For `main` the probe step is skipped entirely (6 calls). For any non-`main`
+    branch the ls-remote probe is inserted between fetch+reset and rotate (7 calls),
+    and this helper supplies a non-empty stdout so the branch is treated as present
+    on origin (resolved decision #5 short-circuit).
     """
     responses = [
-        {"exitCode": 0, "stdout": "", "stderr": ""},
-        {"exitCode": 0, "stdout": "OK\n", "stderr": ""},
-        {"exitCode": 0, "stdout": f"{branch}\n", "stderr": ""},
-        {"exitCode": 0, "stdout": "OK", "stderr": ""},
-        {"exitCode": 0, "stdout": "invocation-2", "stderr": ""},
-        {"exitCode": 0, "stdout": "OK", "stderr": ""},
+        {"exitCode": 0, "stdout": "", "stderr": ""},  # safe.directory
+        {"exitCode": 0, "stdout": "OK\n", "stderr": ""},  # .git probe
+        {"exitCode": 0, "stdout": f"{branch}\n", "stderr": ""},  # rev-parse
+        {"exitCode": 0, "stdout": "OK", "stderr": ""},  # fetch + reset
     ]
+    if branch != "main":
+        # ls-remote probe — non-empty stdout => branch exists on origin, short-circuit.
+        responses.append(
+            {
+                "exitCode": 0,
+                "stdout": f"abc123\trefs/heads/{branch}\n",
+                "stderr": "",
+            }
+        )
+    responses.extend(
+        [
+            {"exitCode": 0, "stdout": "invocation-2", "stderr": ""},  # rotate
+            {"exitCode": 0, "stdout": "OK", "stderr": ""},  # issue.json
+        ]
+    )
     iterator = iter(responses)
 
     def side_effect(*args, **kwargs):
@@ -314,13 +339,18 @@ class TestRefreshForReinvocation:
 
     @patch("assistants.base.execute_command")
     def test_public_path_command_order(self, mock_exec):
-        """Public path (token=None): safe.directory → git probe → rev-parse → fetch+reset → rotate → issue.json."""
+        """Public non-`main` path: safe.directory → .git probe → rev-parse → fetch+reset → ls-remote → rotate → issue.json.
+
+        Resolved decision #5: a non-`main` branch inserts the ls-remote probe between
+        fetch+reset and rotate, bumping the call count from 6 to 7. The helper returns a
+        non-empty ref so the probe short-circuits (branch present on origin).
+        """
         mock_exec.side_effect = _branch_stdout_then_ok("feat/issue-17")
 
         self.strategy.refresh_for_reinvocation("session-1", self.issue, token=None)
 
         calls = [c[0][1] for c in mock_exec.call_args_list]
-        assert len(calls) == 6
+        assert len(calls) == 7
 
         # 1. safe.directory
         assert "safe.directory" in calls[0]
@@ -339,13 +369,16 @@ class TestRefreshForReinvocation:
         assert "/tmp/.git-creds" not in calls[3]
         assert "base64 -d" not in calls[3]
 
-        # 5. rotate happens AFTER fetch+reset
-        assert "ln -sfn" in calls[4]
-        assert "invocation-" in calls[4]
+        # 4a. ls-remote probe (non-`main` only) — runs AFTER fetch+reset, BEFORE rotate
+        assert "git ls-remote origin feat/issue-17" in calls[4]
+
+        # 5. rotate happens AFTER the ls-remote probe
+        assert "ln -sfn" in calls[5]
+        assert "invocation-" in calls[5]
 
         # 6. issue.json write
-        assert "issue.json" in calls[5]
-        assert "base64 -d" in calls[5]
+        assert "issue.json" in calls[6]
+        assert "base64 -d" in calls[6]
 
     @patch("assistants.base.execute_command")
     def test_private_path_uses_credential_helper(self, mock_exec):
@@ -476,6 +509,203 @@ class TestRefreshForReinvocation:
 
         # Only safe.directory + .git probe ran — no rev-parse, no fetch, no rotate.
         assert mock_exec.call_count == 2
+
+    # --- failure-mode-A local-only-branch probe (issue #34) ---
+
+    @patch("assistants.base.execute_command")
+    def test_main_branch_skips_local_only_probe(self, mock_exec):
+        """`main` never diverges local-only — the ls-remote probe is skipped entirely.
+
+        Resolved decision #5: the whole probe block is skipped for `main`, so the call
+        count stays at the original 6 (no ls-remote inserted) and no `git ls-remote`
+        command is ever recorded.
+        """
+        mock_exec.side_effect = _branch_stdout_then_ok("main")
+
+        self.strategy.refresh_for_reinvocation("session-1", self.issue, token=None)
+
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        assert len(calls) == 6
+        assert not any("git ls-remote" in c for c in calls)
+
+    @patch("assistants.base.execute_command")
+    def test_branch_on_origin_short_circuits(self, mock_exec):
+        """Non-`main` branch present on origin: ls-remote returns a ref, probe short-circuits.
+
+        Resolved decision #5/#6: `exitCode == 0` AND non-empty stdout means the branch
+        exists on origin — no divergence, no raise, and no extra `git log` probe. The
+        call sequence is exactly 7 (ls-remote inserted) and execution continues to rotate.
+        """
+        mock_exec.side_effect = _branch_stdout_then_ok("feat/issue-34")
+
+        self.strategy.refresh_for_reinvocation("session-1", self.issue, token=None)
+
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        assert len(calls) == 7
+        # ls-remote ran exactly once and no git-log divergence probe was needed.
+        assert sum("git ls-remote origin feat/issue-34" in c for c in calls) == 1
+        assert not any("git log" in c for c in calls)
+        # Rotate + issue.json still ran after the short-circuit.
+        assert "ln -sfn" in calls[5]
+        assert "issue.json" in calls[6]
+
+    @patch("assistants.base.execute_command")
+    def test_probe_nonzero_exit_raises_branch_probe_error(self, mock_exec):
+        """`git ls-remote` exiting non-zero -> BranchProbeError (fail-closed).
+
+        Resolved decision #6: the probe is exitCode-aware. A non-zero exit means the
+        branch state on origin could not be determined, so refresh aborts BEFORE rotate
+        and issue.json — no push can follow.
+        """
+        responses = [
+            {"exitCode": 0, "stdout": "", "stderr": ""},  # safe.directory
+            {"exitCode": 0, "stdout": "OK\n", "stderr": ""},  # .git probe
+            {"exitCode": 0, "stdout": "feat/issue-34\n", "stderr": ""},  # rev-parse
+            {"exitCode": 0, "stdout": "OK", "stderr": ""},  # fetch + reset
+            {
+                "exitCode": 2,
+                "stdout": "",
+                "stderr": "fatal: unable to access origin",
+            },  # ls-remote errors
+        ]
+        mock_exec.side_effect = responses
+
+        with pytest.raises(BranchProbeError, match="could not be determined"):
+            self.strategy.refresh_for_reinvocation("session-1", self.issue, token=None)
+
+        # safe.directory + .git probe + rev-parse + fetch + ls-remote ran; rotate/issue.json did NOT.
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        assert mock_exec.call_count == 5
+        assert "git ls-remote origin feat/issue-34" in calls[4]
+        assert not any("ln -sfn" in c for c in calls)
+        assert not any("issue.json" in c for c in calls)
+
+    @patch("assistants.base.execute_command")
+    def test_local_only_branch_raises_local_only_branch_error(self, mock_exec):
+        """AC failure-mode-A: ls-remote empty + git log shows local commits -> LocalOnlyBranchError.
+
+        This is the issue #34 acceptance-criteria test. `execute_command` returns: a
+        successful `git fetch`, an `exitCode == 0` empty `git ls-remote` (branch may be
+        absent from origin), and `git log origin/main..HEAD` returning commits. Divergence
+        is CONFIRMED, so `refresh_for_reinvocation` raises `LocalOnlyBranchError` and never
+        reaches the rotate or issue.json-write commands (fail-closed — no push can follow).
+        """
+        responses = [
+            {"exitCode": 0, "stdout": "", "stderr": ""},  # safe.directory
+            {"exitCode": 0, "stdout": "OK\n", "stderr": ""},  # .git probe
+            {"exitCode": 0, "stdout": "feat/issue-34\n", "stderr": ""},  # rev-parse
+            {"exitCode": 0, "stdout": "OK", "stderr": ""},  # fetch + reset (success)
+            {"exitCode": 0, "stdout": "", "stderr": ""},  # ls-remote: exit 0, empty
+            {
+                "exitCode": 0,
+                "stdout": "c9ce0dd add stale base commit\ndeadbee wip\n",
+                "stderr": "",
+            },  # git log origin/main..HEAD: local commits exist
+        ]
+        mock_exec.side_effect = responses
+
+        with pytest.raises(LocalOnlyBranchError, match="feat/issue-34"):
+            self.strategy.refresh_for_reinvocation("session-1", self.issue, token=None)
+
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        # safe.directory + .git probe + rev-parse + fetch + ls-remote + git log ran.
+        assert mock_exec.call_count == 6
+        assert "git ls-remote origin feat/issue-34" in calls[4]
+        assert "git log --oneline origin/main..HEAD" in calls[5]
+        # The divergence summary is surfaced in the exception message for diagnosis.
+        # Rotate + issue.json write were NEVER issued.
+        assert not any("ln -sfn" in c for c in calls)
+        assert not any("issue.json" in c for c in calls)
+
+    @patch("assistants.base.execute_command")
+    def test_git_log_probe_nonzero_exit_raises_branch_probe_error(self, mock_exec):
+        """`git log origin/main..HEAD` exiting non-zero -> BranchProbeError (fail-closed).
+
+        Resolved decision #6: the divergence probe is also exitCode-aware. If `git log`
+        itself fails (e.g. `origin/main` unresolvable), divergence cannot be determined,
+        so refresh aborts before rotate and issue.json.
+        """
+        responses = [
+            {"exitCode": 0, "stdout": "", "stderr": ""},  # safe.directory
+            {"exitCode": 0, "stdout": "OK\n", "stderr": ""},  # .git probe
+            {"exitCode": 0, "stdout": "feat/issue-34\n", "stderr": ""},  # rev-parse
+            {"exitCode": 0, "stdout": "OK", "stderr": ""},  # fetch + reset
+            {"exitCode": 0, "stdout": "", "stderr": ""},  # ls-remote: exit 0, empty
+            {
+                "exitCode": 128,
+                "stdout": "",
+                "stderr": "fatal: bad revision 'origin/main..HEAD'",
+            },  # git log fails
+        ]
+        mock_exec.side_effect = responses
+
+        with pytest.raises(BranchProbeError, match="could not be determined"):
+            self.strategy.refresh_for_reinvocation("session-1", self.issue, token=None)
+
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        assert mock_exec.call_count == 6
+        assert "git ls-remote origin feat/issue-34" in calls[4]
+        assert "git log --oneline origin/main..HEAD" in calls[5]
+        assert not any("ln -sfn" in c for c in calls)
+        assert not any("issue.json" in c for c in calls)
+
+    @patch("assistants.base.execute_command")
+    def test_probe_ambiguous_empty_stdout_raises_branch_probe_error(self, mock_exec):
+        """ls-remote empty + git log empty (exit 0) is ambiguous -> BranchProbeError (fail-closed).
+
+        Resolved decision #6 (critical): per issue #37 a successful command can return
+        exitCode=0 with NO stdout (dropped output). When `git ls-remote` is empty we run
+        the `git log origin/main..HEAD` divergence probe; if it ALSO returns empty (exit 0)
+        we cannot distinguish "branch absent with no extra commits" from a dropped
+        ls-remote result, so this ambiguous case raises BranchProbeError rather than
+        guessing divergence.
+        """
+        responses = [
+            {"exitCode": 0, "stdout": "", "stderr": ""},  # safe.directory
+            {"exitCode": 0, "stdout": "OK\n", "stderr": ""},  # .git probe
+            {"exitCode": 0, "stdout": "feat/issue-34\n", "stderr": ""},  # rev-parse
+            {"exitCode": 0, "stdout": "OK", "stderr": ""},  # fetch + reset
+            {"exitCode": 0, "stdout": "", "stderr": ""},  # ls-remote: exit 0, empty
+            {"exitCode": 0, "stdout": "", "stderr": ""},  # git log: exit 0, empty
+        ]
+        mock_exec.side_effect = responses
+
+        with pytest.raises(BranchProbeError, match="dropped output"):
+            self.strategy.refresh_for_reinvocation("session-1", self.issue, token=None)
+
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        assert mock_exec.call_count == 6
+        assert "git ls-remote origin feat/issue-34" in calls[4]
+        assert "git log --oneline origin/main..HEAD" in calls[5]
+        assert not any("ln -sfn" in c for c in calls)
+        assert not any("issue.json" in c for c in calls)
+
+    @patch("assistants.base.execute_command")
+    def test_probe_does_not_leak_token(self, mock_exec):
+        """The ls-remote probe command must never embed the GitHub token literally."""
+        mock_exec.side_effect = _branch_stdout_then_ok("feat/issue-34")
+
+        self.strategy.refresh_for_reinvocation(
+            "session-1", self.issue, token="secret_tok_123"
+        )
+
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        probe_cmd = next(c for c in calls if "git ls-remote" in c)
+        assert "secret_tok_123" not in probe_cmd
+        for cmd in calls:
+            assert "secret_tok_123" not in cmd
+
+    def test_local_only_branch_error_is_distinct_exception(self):
+        """`LocalOnlyBranchError` and `BranchProbeError` are distinct Exception subclasses.
+
+        `LocalOnlyBranchError` is the divergence-confirmed category (branch absent from
+        origin AND local commits beyond origin/main); `BranchProbeError` is the
+        probe-failed/ambiguous category. They must be distinct so callers can react
+        differently (e.g. surface divergence vs. retry the probe).
+        """
+        assert issubclass(LocalOnlyBranchError, Exception)
+        assert issubclass(BranchProbeError, Exception)
+        assert LocalOnlyBranchError is not BranchProbeError
 
 
 # --- _write_file_chunked tests ---
