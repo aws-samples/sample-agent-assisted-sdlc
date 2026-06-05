@@ -11,11 +11,26 @@ from abc import ABC, abstractmethod
 
 from pipeline import execute_command
 
+# The failure-mode-A probe (issue #34) reconciles resolved decisions #5 and #6:
+#   * `LocalOnlyBranchError` — divergence CONFIRMED: the branch is absent from origin
+#     (`git ls-remote` empty) AND `git log origin/main..HEAD` shows local commits not
+#     in origin/main. This is the headline failure-mode-A case.
+#   * `BranchProbeError` — the probe command itself failed or was ambiguous: a non-zero
+#     exit, a `git log` failure, OR an `exitCode == 0` empty `git log` that cannot be
+#     distinguished from AgentCore dropped output (issue #37). Fail-closed.
 try:
-    from errors import WorkspaceSetupError
+    from errors import (
+        BranchProbeError,
+        LocalOnlyBranchError,
+        WorkspaceSetupError,
+    )
     from log import get_logger
 except ImportError:  # pragma: no cover - test path
-    from shared.errors import WorkspaceSetupError
+    from shared.errors import (
+        BranchProbeError,
+        LocalOnlyBranchError,
+        WorkspaceSetupError,
+    )
     from shared.log import get_logger
 
 logger = get_logger(__name__)
@@ -212,7 +227,7 @@ class AssistantStrategy(ABC):
     ) -> dict:
         """Re-invocation: fetch latest commits, reset workspace, rotate invocation dir, refresh issue.json.
 
-        Order (locked by issue #17):
+        Order (locked by issue #17, extended by issue #34):
           1. `git config --global --add safe.directory /mnt/workplace/gitproject` (idempotent).
           2. Probe for `.git` directory — fail fast with `WorkspaceSetupError` if missing,
              since downstream `git rev-parse` would exit 128 with empty stdout and
@@ -221,7 +236,24 @@ class AssistantStrategy(ABC):
           4. Fetch + reset (public path: plain; private path: credential-helper-wrapped, mirrors
              `clone_private_repo` exactly — base64-decoded creds written to `/tmp/.git-creds`,
              cleanup on both success AND failure via `EXIT=$?; rm -f ...; --unset credential.helper`).
-          5. Existing rotation + `issue.json` refresh.
+          5. Failure-mode-A local-only-branch probe (issue #34) — AFTER fetch+reset, BEFORE rotate.
+             Skipped when `branch == "main"` (main never diverges this way). Reconciles resolved
+             decisions #5 and #6:
+               a. `git ls-remote origin <branch>`, reading BOTH `exitCode` and `stdout`:
+                  - `exitCode != 0` -> `BranchProbeError` (probe command failed).
+                  - `exitCode == 0` AND non-empty stdout -> branch exists on origin; SHORT-CIRCUIT
+                    (no `git log` probe, proceed to rotate — keeps the 7-call happy path).
+                  - `exitCode == 0` AND empty stdout -> branch may be absent from origin; run the
+                    divergence probe (step b).
+               b. `git log --oneline origin/main..HEAD`:
+                  - `exitCode != 0` -> `BranchProbeError` (probe command failed).
+                  - non-empty stdout (local commits exist beyond origin/main) -> `LocalOnlyBranchError`
+                    (divergence CONFIRMED — the real failure-mode-A case).
+                  - empty stdout (`exitCode == 0`) -> ambiguous: cannot distinguish "branch absent +
+                    no extra commits" from AgentCore dropped `ls-remote` output (issue #37), so
+                    `BranchProbeError` (fail-closed per decision #6).
+             Fail-closed — a push of a stale local-only branch is impossible past this gate.
+          6. Existing rotation + `issue.json` refresh.
 
         Untracked files (`.dev-claude/`, `hooks/`, `skills/`, `.claude-plugin/`, `.mcp.json`,
         `settings.json`, `gateway-iam-proxy/`) survive `git reset --hard` provided they remain
@@ -294,7 +326,106 @@ class AssistantStrategy(ABC):
             extra={"exit_code": fetch_result.get("exitCode")},
         )
 
-        # 5. Rotate: create next invocation-N directory and update 'current' symlink.
+        # 5. Failure-mode-A probe (issue #34): detect a local-only branch — one that
+        #    exists in the workspace with commits beyond origin/main but is absent from
+        #    origin. Pushing such a branch would be unreviewable, so this is a fail-closed
+        #    gate that runs AFTER fetch+reset and BEFORE rotate. `main` never diverges this
+        #    way, so the probe is skipped entirely for it (keeps the call count at 6).
+        if branch != "main":
+            # a. `git ls-remote origin <branch>` lists the remote ref if it exists. Per
+            #    resolved decision #6 the probe is exitCode-aware: a non-zero exit means
+            #    the probe command itself failed and branch state is unknown.
+            lsremote_result = execute_command(
+                session_id,
+                f"sh -c 'cd /mnt/workplace/gitproject && git ls-remote origin {branch}'",
+                timeout=30,
+            )
+            lsremote_exit = lsremote_result.get("exitCode")
+            lsremote_stdout = lsremote_result.get("stdout", "").strip()
+            if lsremote_exit != 0:
+                logger.error(
+                    "branch_probe_failed",
+                    extra={
+                        "branch": branch,
+                        "exit_code": lsremote_exit,
+                        "reason": "ls_remote_nonzero_exit",
+                    },
+                )
+                raise BranchProbeError(
+                    f"git ls-remote origin {branch} exited {lsremote_exit} — branch "
+                    f"state on origin could not be determined; refusing to proceed "
+                    f"(fail-closed)."
+                )
+            if lsremote_stdout:
+                # exitCode == 0 AND non-empty: the branch is on origin, so there is no
+                # local-only divergence to detect — short-circuit (resolved decision #5).
+                logger.info(
+                    "branch_on_origin",
+                    extra={"branch": branch},
+                )
+            else:
+                # exitCode == 0 AND empty stdout: the branch MAY be absent from origin, but
+                # per issue #37 a successful command can drop its stdout. Do NOT guess
+                # divergence yet — run the `git log origin/main..HEAD` divergence probe and
+                # decide from its output (resolved decisions #5 + #6).
+                gitlog_result = execute_command(
+                    session_id,
+                    "sh -c 'cd /mnt/workplace/gitproject && "
+                    "git log --oneline origin/main..HEAD'",
+                    timeout=30,
+                )
+                gitlog_exit = gitlog_result.get("exitCode")
+                gitlog_stdout = gitlog_result.get("stdout", "").strip()
+                if gitlog_exit != 0:
+                    logger.error(
+                        "branch_probe_failed",
+                        extra={
+                            "branch": branch,
+                            "exit_code": gitlog_exit,
+                            "reason": "git_log_nonzero_exit",
+                        },
+                    )
+                    raise BranchProbeError(
+                        f"git log origin/main..HEAD exited {gitlog_exit} for branch "
+                        f"{branch} — divergence could not be determined; refusing to "
+                        f"proceed (fail-closed)."
+                    )
+                if gitlog_stdout:
+                    # Positive evidence of divergence: the branch is absent from origin
+                    # AND has local commits not in origin/main. This is failure-mode-A.
+                    logger.error(
+                        "local_only_branch_detected",
+                        extra={
+                            "branch": branch,
+                            "local_commits": gitlog_stdout,
+                            "reason": "commits_beyond_origin_main",
+                        },
+                    )
+                    raise LocalOnlyBranchError(
+                        f"branch {branch} is absent from origin yet has local commits not "
+                        f"in origin/main — pushing it would be unreviewable; refusing to "
+                        f"proceed (fail-closed). Local commits:\n{gitlog_stdout}"
+                    )
+                # exitCode == 0 AND empty git log: either the branch is genuinely absent
+                # with no extra commits, OR the ls-remote stdout was dropped (issue #37).
+                # We cannot distinguish the two, so fail closed rather than guess
+                # (resolved decision #6's ambiguous-empty caution).
+                logger.error(
+                    "branch_probe_ambiguous",
+                    extra={
+                        "branch": branch,
+                        "exit_code": gitlog_exit,
+                        "reason": "ls_remote_empty_and_no_local_commits",
+                    },
+                )
+                raise BranchProbeError(
+                    f"git ls-remote origin {branch} returned empty stdout and "
+                    f"git log origin/main..HEAD found no local commits — cannot "
+                    f"distinguish 'branch absent with no extra commits' from dropped "
+                    f"output (issue #37); refusing to guess (fail-closed)."
+                )
+
+        # 6. Rotate: create next invocation-N directory and update 'current' symlink.
         rotate_result = execute_command(
             session_id,
             "sh -c 'cd /mnt/workplace/gitproject/.dev-claude && "
