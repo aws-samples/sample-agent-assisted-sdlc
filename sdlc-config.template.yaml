@@ -42,7 +42,7 @@ sourceControl:
     appClientId: ""               # GitHub App Client ID (from app settings page)
     installationId: ""            # GitHub App Installation ID (from installation URL)
     privateKeyPath: ""            # Path to .pem file (relative to project root)
-    toolsets: repos,pull_requests,context
+    toolsets: repos,pull_requests,context,actions  # adds CI log read access (get_job_logs)
     maxLifetime: 3300             # MCP server max lifetime (< token expiry of 3600)
     privateRepo: false            # Set true if target repos are private
     allowedRepos:                 # Required: exact repos that can trigger the pipeline
