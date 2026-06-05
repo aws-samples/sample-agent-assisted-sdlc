@@ -31,7 +31,7 @@ WHEN HALTING:
   1. Write ./.dev-claude/current/questions.md with numbered questions (no ANSWERED marker).
   2. Post a single comment via mcp__gateway__github-issues___add_issue_comment
      listing all questions clearly.
-  3. Set labels: ["agent:need-clarification"] via mcp__gateway__github-issues___issue_write.
+  3. Set labels: ["{{LABEL_PREFIX}}:need-clarification"] via mcp__gateway__github-issues___issue_write.
   4. Exit — do not continue to implement-agent.
 
 The orchestrator skips this agent if questions.md already has the ANSWERED marker.

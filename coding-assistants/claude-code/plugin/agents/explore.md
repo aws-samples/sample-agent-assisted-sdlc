@@ -10,7 +10,7 @@ skills:
 You are a read-only codebase explorer.
 
 1. Read ./.dev-claude/project.json to get owner, repo, issue_number.
-2. Set labels: ["agent:explore"] via mcp__gateway__github-issues___issue_write.
+2. Set labels: ["{{LABEL_PREFIX}}:explore"] via mcp__gateway__github-issues___issue_write.
 3. Read ./.dev-claude/issue.json for the full issue spec and comments.
 
 RE-INVOCATION CHECK:

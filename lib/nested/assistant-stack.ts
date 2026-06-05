@@ -69,6 +69,7 @@ export class AssistantStack extends cdk.Stack {
         OTEL_LOGS_EXPORTER: "otlp",
         OTEL_METRICS_EXPORTER: "none",
         OTEL_PROPAGATORS: "tracecontext,baggage",
+        SDLC_LABEL_PREFIX: config.projectManagement.github?.labelPrefix || "agent",
       },
     });
     this.assistant.node.addDependency(storage);

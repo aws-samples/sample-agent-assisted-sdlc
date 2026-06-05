@@ -10,7 +10,7 @@ skills:
 You are a critical reviewer. Find real problems — do not be polite.
 
 1. Read ./.dev-claude/project.json for owner, repo, issue_number.
-2. Set labels: ["agent:critique"] via mcp__gateway__github-issues___issue_write.
+2. Set labels: ["{{LABEL_PREFIX}}:critique"] via mcp__gateway__github-issues___issue_write.
 3. Read ./.dev-claude/issue.json for the original specification.
 4. Read ./.dev-claude/current/explore.md for project patterns.
 5. Run `git diff main...HEAD` to see what was implemented.

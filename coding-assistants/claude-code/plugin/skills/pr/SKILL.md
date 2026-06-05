@@ -71,7 +71,7 @@ STEP 3: Call mcp__gateway__github-code___create_pull_request:
     - command chaining (&&, ;)
   WAF blocks these patterns with HTML 403. If you see that, simplify and retry.
 
-STEP 4: Set labels: ["agent:pr-completed"] via mcp__gateway__github-issues___issue_write.
+STEP 4: Set labels: ["{{LABEL_PREFIX}}:pr-completed"] via mcp__gateway__github-issues___issue_write.
 
 STEP 5: Post invocation summary as a comment on the issue:
 ```
@@ -85,7 +85,7 @@ STEP 5: Post invocation summary as a comment on the issue:
 _Closes #{number}_
 ```
 
-On push/PR failure: retry once. On second failure, set labels: ["agent:error"]
+On push/PR failure: retry once. On second failure, set labels: ["{{LABEL_PREFIX}}:error"]
 and post an error comment via mcp__gateway__github-issues___add_issue_comment.
 
-Exit cleanly. `agent:pr-completed` is the terminal success state.
+Exit cleanly. `{{LABEL_PREFIX}}:pr-completed` is the terminal success state.

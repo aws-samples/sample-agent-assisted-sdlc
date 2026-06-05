@@ -149,6 +149,15 @@ class AssistantStrategy(ABC):
                 f"Copy output: {result.get('stdout', '')}"
             )
 
+        label_prefix = os.environ.get("SDLC_LABEL_PREFIX", "agent")
+        execute_command(
+            session_id,
+            f"sh -c 'find /mnt/workplace/gitproject/skills /mnt/workplace/gitproject/agents "
+            f'-name "*.md" -exec sed -i '
+            f'"s/{{{{LABEL_PREFIX}}}}/{label_prefix}/g" {{}} + 2>/dev/null; echo OK\'',
+            timeout=10,
+        )
+
         # Chunked write to survive large issue.json payloads — see _write_file_chunked.
         _write_file_chunked(
             session_id,
