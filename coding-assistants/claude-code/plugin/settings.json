@@ -20,6 +20,10 @@
       "mcp__gateway__github-code___get_tag",
       "mcp__gateway__github-code___search_pull_requests",
       "mcp__gateway__github-code___search_commits",
+      "mcp__gateway__github-code___cancel_workflow_run",
+      "mcp__gateway__github-code___delete_workflow_run_logs",
+      "mcp__gateway__github-code___rerun_failed_jobs",
+      "mcp__gateway__github-code___rerun_workflow_run",
       "mcp__gateway__github-issues___sub_issue_write",
       "mcp__gateway__github-issues___list_issue_types",
       "mcp__gateway__github-issues___search_issues"
