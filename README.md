@@ -72,6 +72,9 @@ The project management platform is what developers interact with day-to-day. It 
 
 Each project management platform has two parts:
 
+<details>
+<summary> <b> Explore Components </b> </summary>
+
 - **Connector** (event-driven trigger)
   - Watches for a trigger event (e.g., `agent:start` label added to an issue)
   - Resolves the full issue context (title, body, comments) via GraphQL
@@ -86,6 +89,8 @@ Each project management platform has two parts:
   - The coding assistant uses these to read the issue spec, post progress updates, and set labels (`stage:implementing`, `state:pr-created`)
   - Location: [project-management/github/mcp/](./project-management/github/mcp/)
 
+</details>
+
 
 ### 4. Source Control
 
@@ -96,6 +101,9 @@ The source control platform is where code lives. The coding assistant needs to c
 | GitHub | ✅ | [source-control/github/](./source-control/github/) |
 
 Each source control platform provides:
+
+<details>
+<summary> <b> Explore Components </b> </summary>
 
 - **MCP Server** (code operations for the coding assistant)
   - Deployed as an AgentCore Runtime, registered as a gateway target
@@ -108,6 +116,8 @@ Each source control platform provides:
   - Token is created from the private key stored in Secrets Manager (JWT signed → exchanged for 1-hour installation token)
   - The gateway and coding assistant never see the token; only the MCP server uses it to authenticate with the GitHub API
   - Container max lifetime (55 min) ensures recycling before token expiry
+
+</details>
 
 ## Quick Start
 
@@ -276,4 +286,3 @@ See [CONTRIBUTING](CONTRIBUTING.md#security-issue-notifications) for more inform
 ## License
 
 This project is licensed under the Apache-2.0 License.
-
