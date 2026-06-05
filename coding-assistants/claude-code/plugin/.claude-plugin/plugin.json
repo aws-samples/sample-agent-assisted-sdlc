@@ -2,5 +2,7 @@
 	"name": "sdlc-claude",
 	"version": "1.0.0",
 	"description": "SDLC coding assistant plugin — autonomous issue-to-PR pipeline with multi-agent orchestration",
-	"author": "agentcore-sdlc"
+	"author": {
+		"name": "agentcore-sdlc"
+	}
 }
