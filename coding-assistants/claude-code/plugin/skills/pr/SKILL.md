@@ -40,31 +40,11 @@ STEP 2: Write ./.dev-claude/current/pr.md summarising what was built. Then post 
 as a comment on the issue via mcp__gateway__github-issues___add_issue_comment.
 Prefix with `### PR Summary\n\n`.
 
-MARKDOWN FORMATTING RULES (apply to pr.md, the issue comment body, AND
-the PR body in STEP 3; ignore for code blocks, tables, and bulleted lists):
+Follow [shared/FORMATTING.md](../shared/FORMATTING.md) for all markdown output.
 
-- Do NOT hard-wrap paragraphs at a column limit. Write one paragraph per
-  line and let the renderer wrap. Hard wrapping makes diffs noisy.
-- The `### PR Summary` prefix is the ONLY top-level heading the issue
-  comment may have. Do NOT add another `#` or `##` heading inside the
-  body — start subsections at `###` or lower.
-- The PR body in STEP 3 starts at `##` (What / Why / How / Testing) — no
-  `#` H1 in the PR body.
-
-STEP 2b: PR-existence verification before create_pull_request (defense-in-depth).
-
-Mirror of orchestrator/SKILL.md verification block — keep in sync.
-
-This is the late gate. The orchestrator runs the same check at re-invocation entry and before PATH A's inline create_pull_request; this block re-verifies against real GitHub state immediately before the pr-agent creates a PR, so a stale or duplicate "completed" can never be posted. It uses ONLY `state` + `mergedAt` for control flow; `mergeStateStatus` is logged as diagnostic context only.
-
-1. Resolve the branch name `feat/issue-{number}` from project.json.
-2. Find the PR for this branch. Call `mcp__gateway__github-code___list_pull_requests` with `head={owner}:feat/issue-{number}` (REST-filtered fast path). If that returns empty or errors, call `mcp__gateway__github-code___list_pull_requests` again listing open PRs and match `headRefName == feat/issue-{number}` client-side (fallback).
-3. If a PR is found, call `mcp__gateway__github-code___pull_request_read` and read `state`, `mergedAt`, and `mergeStateStatus`. Log `mergeStateStatus` (`BLOCKED`, `DIRTY`, `BEHIND`) as diagnostic context only — it MUST NOT drive any branching decision.
-4. Decide using ONLY `state` + `mergedAt`:
-   - PR exists AND `mergedAt` is not null → already merged. Do NOT create a duplicate. Set labels `["agent:pr-completed"]` via `mcp__gateway__github-issues___issue_write`, post a comment via `mcp__gateway__github-issues___add_issue_comment`, and exit cleanly.
-   - PR exists AND `state == OPEN` AND `mergedAt` is null → a PR is already open for this branch. SKIP STEP 3 (do not open a second PR); proceed to STEP 4 to set labels and post the summary against the existing PR.
-   - PR exists AND `state == CLOSED` AND `mergedAt` is null → closed without merge. Set labels `["agent:error"]`, post a comment, and exit.
-   - No PR exists → proceed to STEP 3 and create it.
+STEP 2b: PR-existence verification (defense-in-depth, late gate).
+Follow [shared/PR-VERIFICATION.md](../shared/PR-VERIFICATION.md).
+If open PR exists → skip STEP 3, proceed to STEP 4. If no PR → STEP 3.
 
 STEP 3: Call mcp__gateway__github-code___create_pull_request:
   owner and repo from project.json

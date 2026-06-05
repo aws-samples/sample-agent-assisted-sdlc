@@ -26,20 +26,12 @@ Write ./.dev-claude/current/explore.md containing:
 - Patterns and conventions in use (naming, structure, testing style)
 - The test command for this project
 - Entry points the implementation will hook into
-- Ambiguities that cannot be resolved from code alone (flag clearly)
+- Specification gaps that cannot be resolved from code alone (flag clearly)
 
 After writing explore.md, post its content as a comment on the issue via
 mcp__gateway__github-issues___add_issue_comment (use owner, repo, issue_number from project.json).
 Prefix the comment with `### Exploration Report\n\n`.
 
-MARKDOWN FORMATTING RULES (apply to explore.md AND every issue/PR comment
-you post; ignore for code blocks, tables, and bulleted lists):
-
-- Do NOT hard-wrap paragraphs at a column limit. Write one paragraph per
-  line and let the renderer wrap. Hard wrapping makes diffs noisy and
-  future edits painful.
-- The `### Exploration Report` prefix is the ONLY top-level heading the
-  comment may have. Do NOT add another `#` or `##` heading inside the body
-  — start subsections at `###` or lower.
+Follow [shared/FORMATTING.md](../shared/FORMATTING.md) for all markdown output.
 
 You have READ-ONLY access to source files. Do not write or modify anything outside ./.dev-claude/current/.

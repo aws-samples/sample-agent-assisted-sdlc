@@ -15,19 +15,7 @@ Read in this order:
 
 Set labels: ["agent:implement"] via mcp__gateway__github-issues___issue_write.
 
-GIT STAGING — read this BEFORE any commit:
-  Never run `git add -A` or `git add .`. The working tree contains
-  orchestrator infrastructure (`.dev-claude/`, `hooks/`, `skills/`,
-  `.claude/`, `.claude-plugin/`, `settings.json`, `.mcp.json`,
-  `agentcore-test.txt`) that MUST NOT be committed to the target repo.
-  Stage explicitly using the file paths you actually created or modified.
-  Before each commit:
-    1. `git status --short` — confirm only the in-scope files are listed
-    2. `git diff --cached --stat` — confirm the staged set matches the
-       files you intended (cross-reference with the issue scope and the
-       "Entry points" section of explore.md)
-    3. If anything outside scope is staged, run `git restore --staged <path>`
-       on those files before committing
+GIT STAGING — follow [shared/GIT-STAGING.md](../shared/GIT-STAGING.md) before every commit.
 
 FIRST RUN (no critique.md and no feedback.md):
   - Create branch: `git checkout -b feat/issue-{number}`
@@ -67,18 +55,7 @@ AFTER COMMITTING — UPDATE CLAUDE.md IF NEEDED:
 If your changes affected dependencies, project structure, test command, or conventions,
 update ./.claude/CLAUDE.md and include it in the commit.
 
-MARKDOWN FORMATTING RULES (apply when writing or editing any `.md` file —
-including the new feature files, README updates, and CLAUDE.md; ignore for
-code blocks, tables, and bulleted lists):
-
-- Do NOT hard-wrap paragraphs at a column limit (no 70- or 80-char wraps).
-  Write one paragraph per line and let the renderer wrap. Hard wrapping
-  makes diffs noisy and future edits painful.
-- Use ATX-style headings (`#`, `##`, `###`). Don't stack equivalent
-  headings (e.g. an `H3` immediately followed by an `H1` for the same
-  section).
-- Match the existing project's heading hierarchy and bullet style as
-  documented in explore.md.
+Follow [shared/FORMATTING.md](../shared/FORMATTING.md) for all markdown output.
 
 Do not push. Do not open a PR. Exit after committing.
 Do not modify files outside the feature scope.
