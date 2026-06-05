@@ -3,44 +3,44 @@
   "permissionMode": "dontAsk",
   "permissions": {
     "deny": [
-      "mcp__gateway__github-code___create_repository",
-      "mcp__gateway__github-code___fork_repository",
-      "mcp__gateway__github-code___merge_pull_request",
-      "mcp__gateway__github-code___pull_request_review_write",
-      "mcp__gateway__github-code___update_pull_request_branch",
-      "mcp__gateway__github-code___get_me",
-      "mcp__gateway__github-code___get_team_members",
-      "mcp__gateway__github-code___get_teams",
-      "mcp__gateway__github-code___list_repository_collaborators",
-      "mcp__gateway__github-code___search_repositories",
-      "mcp__gateway__github-code___list_releases",
-      "mcp__gateway__github-code___get_latest_release",
-      "mcp__gateway__github-code___get_release_by_tag",
-      "mcp__gateway__github-code___list_tags",
-      "mcp__gateway__github-code___get_tag",
-      "mcp__gateway__github-code___search_pull_requests",
-      "mcp__gateway__github-code___search_commits",
-      "mcp__gateway__github-code___cancel_workflow_run",
-      "mcp__gateway__github-code___delete_workflow_run_logs",
-      "mcp__gateway__github-code___rerun_failed_jobs",
-      "mcp__gateway__github-code___rerun_workflow_run",
-      "mcp__gateway__github-issues___sub_issue_write",
-      "mcp__gateway__github-issues___list_issue_types",
-      "mcp__gateway__github-issues___search_issues"
+      "mcp__gateway__source-control___create_repository",
+      "mcp__gateway__source-control___fork_repository",
+      "mcp__gateway__source-control___merge_pull_request",
+      "mcp__gateway__source-control___pull_request_review_write",
+      "mcp__gateway__source-control___update_pull_request_branch",
+      "mcp__gateway__source-control___get_me",
+      "mcp__gateway__source-control___get_team_members",
+      "mcp__gateway__source-control___get_teams",
+      "mcp__gateway__source-control___list_repository_collaborators",
+      "mcp__gateway__source-control___search_repositories",
+      "mcp__gateway__source-control___list_releases",
+      "mcp__gateway__source-control___get_latest_release",
+      "mcp__gateway__source-control___get_release_by_tag",
+      "mcp__gateway__source-control___list_tags",
+      "mcp__gateway__source-control___get_tag",
+      "mcp__gateway__source-control___search_pull_requests",
+      "mcp__gateway__source-control___search_commits",
+      "mcp__gateway__source-control___cancel_workflow_run",
+      "mcp__gateway__source-control___delete_workflow_run_logs",
+      "mcp__gateway__source-control___rerun_failed_jobs",
+      "mcp__gateway__source-control___rerun_workflow_run",
+      "mcp__gateway__project-management___sub_issue_write",
+      "mcp__gateway__project-management___list_issue_types",
+      "mcp__gateway__project-management___search_issues"
     ]
   },
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "mcp__gateway__github-issues___issue_write",
+        "matcher": "mcp__gateway__project-management___issue_write",
         "hooks": [{"type": "command", "command": "./hooks/label-governance.sh"}]
       },
       {
-        "matcher": "mcp__gateway__github-code___.*",
+        "matcher": "mcp__gateway__source-control___.*",
         "hooks": [{"type": "command", "command": "./hooks/scope-guard.sh"}]
       },
       {
-        "matcher": "mcp__gateway__github-issues___.*",
+        "matcher": "mcp__gateway__project-management___.*",
         "hooks": [{"type": "command", "command": "./hooks/scope-guard.sh"}]
       },
       {
@@ -48,7 +48,7 @@
         "hooks": [{"type": "command", "command": "./hooks/secret-guard.sh"}]
       },
       {
-        "matcher": "mcp__gateway__github-code___push_files",
+        "matcher": "mcp__gateway__source-control___push_files",
         "hooks": [{"type": "command", "command": "./hooks/secret-guard.sh"}]
       },
       {
@@ -56,7 +56,7 @@
         "hooks": [{"type": "command", "command": "./hooks/bash-guard.sh"}]
       },
       {
-        "matcher": "mcp__gateway__github-issues___add_issue_comment|mcp__gateway__github-issues___issue_write|mcp__gateway__github-code___add_pull_request_comment|mcp__gateway__github-code___create_pull_request|mcp__gateway__github-code___push_files",
+        "matcher": "mcp__gateway__project-management___add_issue_comment|mcp__gateway__project-management___issue_write|mcp__gateway__source-control___add_pull_request_comment|mcp__gateway__source-control___create_pull_request|mcp__gateway__source-control___push_files",
         "hooks": [{"type": "command", "command": "./hooks/comment-guard.sh"}]
       }
     ]
