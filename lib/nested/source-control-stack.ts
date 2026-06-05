@@ -30,7 +30,7 @@ export class SourceControlStack extends cdk.Stack {
       appClientId: ghConfig.appClientId,
       installationId: ghConfig.installationId,
       privateKeyPath: ghConfig.privateKeyPath,
-      toolsets: ghConfig.toolsets || "repos,pull_requests,context",
+      toolsets: ghConfig.toolsets || "repos,pull_requests,context,actions",
       maxLifetime: ghConfig.maxLifetime,
     });
 
@@ -48,7 +48,7 @@ export class SourceControlStack extends cdk.Stack {
         GITHUB_APP_CLIENT_ID: ghConfig.appClientId,
         GITHUB_INSTALLATION_ID: ghConfig.installationId,
         PRIVATE_KEY_SECRET_ARN: githubConnector.privateKeySecret.secretArn,
-        GITHUB_TOOLSETS: ghConfig.toolsets || "repos,pull_requests,context",
+        GITHUB_TOOLSETS: ghConfig.toolsets || "repos,pull_requests,context,actions",
       },
     });
 
