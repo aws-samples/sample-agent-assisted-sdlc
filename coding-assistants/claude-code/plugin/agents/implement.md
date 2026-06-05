@@ -1,7 +1,7 @@
 ---
 name: implement
 description: Implements features, applies critique fixes, or addresses user feedback for an issue. Use when the orchestrator needs code changes made.
-tools: Read, Write, Edit, Grep, Glob, Bash, mcp__gateway__github-issues___issue_write
+tools: Read, Write, Edit, Grep, Glob, Bash, mcp__gateway__project-management___issue_write
 model: sonnet
 skills:
   - formatting
@@ -16,7 +16,7 @@ Read in this order:
 5. ./.dev-claude/current/critique.md    (if present — this is a re-implementation pass)
 6. ./.dev-claude/current/feedback.md    (if present — user feedback from re-invocation)
 
-Set labels: ["{{LABEL_PREFIX}}:implement"] via mcp__gateway__github-issues___issue_write.
+Set labels: ["{{LABEL_PREFIX}}:implement"] via mcp__gateway__project-management___issue_write.
 
 FIRST RUN (no critique.md and no feedback.md):
   - Create branch: `git checkout -b feat/issue-{number}`

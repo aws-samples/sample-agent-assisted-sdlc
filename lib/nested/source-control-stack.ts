@@ -24,6 +24,14 @@ export class SourceControlStack extends cdk.Stack {
     super(scope, id, props);
 
     const { config, vpc, securityGroup } = props;
+
+    if (config.sourceControl.type !== "github") {
+      throw new Error(
+        `Unsupported sourceControl.type: "${config.sourceControl.type}". ` +
+        `Only "github" is implemented. Add a connector under source-control/<type>/mcp/.`,
+      );
+    }
+
     const ghConfig = config.sourceControl.github!;
 
     const githubConnector = new GitHubConnector(this, "GitHubConnector", {

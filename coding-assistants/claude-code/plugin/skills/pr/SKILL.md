@@ -16,7 +16,7 @@ STEP 1: Push the branch via the MCP gateway (NOT direct `git push`).
 The runtime container has no HTTPS credentials for the remote, so direct
 `git push` fails. Instead, enumerate the files this branch changed
 relative to `main` and push their contents through
-`mcp__gateway__github-code___push_files` (which uses the GitHub App token).
+`mcp__gateway__source-control___push_files` (which uses the GitHub App token).
 
   1. Run `git diff --name-status main..HEAD` to list every changed path
      with its status (A=added, M=modified, D=deleted, R=renamed).
@@ -25,19 +25,19 @@ relative to `main` and push their contents through
      left work uncommitted; do not push partial state.
   3. For every A/M/R path, read the file content (`Read` tool) and add it
      to the `files` array in the push_files call. For D paths, delete via
-     `mcp__gateway__github-code___delete_file` per path.
-  4. Call `mcp__gateway__github-code___push_files`:
+     `mcp__gateway__source-control___delete_file` per path.
+  4. Call `mcp__gateway__source-control___push_files`:
        owner, repo, branch=feat/issue-{number}
        message: "feat: {issue title} (#{number})" (or "fix: ..." on
                 second pass / re-invocation, matching the commit message
                 style implement-agent used)
        files: array of {path, content} for every A/M/R path
   5. If push_files reports 422 "branch does not exist", first call
-     `mcp__gateway__github-code___create_branch` with branch=feat/issue-{number}
+     `mcp__gateway__source-control___create_branch` with branch=feat/issue-{number}
      and ref="main", then retry push_files.
 
 STEP 2: Write ./.dev-claude/current/pr.md summarising what was built. Then post pr.md content
-as a comment on the issue via mcp__gateway__github-issues___add_issue_comment.
+as a comment on the issue via mcp__gateway__project-management___add_issue_comment.
 Prefix with `### PR Summary\n\n`.
 
 Follow the formatting skill for all markdown output.
@@ -46,7 +46,7 @@ STEP 2b: PR-existence verification (defense-in-depth, late gate).
 Follow the pr-verification skill procedure.
 If open PR exists → skip STEP 3, proceed to STEP 4. If no PR → STEP 3.
 
-STEP 3: Call mcp__gateway__github-code___create_pull_request:
+STEP 3: Call mcp__gateway__source-control___create_pull_request:
   owner and repo from project.json
   title: "feat: {issue title} (#{number})"
   head: feat/issue-{number}
@@ -71,7 +71,7 @@ STEP 3: Call mcp__gateway__github-code___create_pull_request:
     - command chaining (&&, ;)
   WAF blocks these patterns with HTML 403. If you see that, simplify and retry.
 
-STEP 4: Set labels: ["{{LABEL_PREFIX}}:pr-completed"] via mcp__gateway__github-issues___issue_write.
+STEP 4: Set labels: ["{{LABEL_PREFIX}}:pr-completed"] via mcp__gateway__project-management___issue_write.
 
 STEP 5: Post invocation summary as a comment on the issue:
 ```
@@ -86,6 +86,6 @@ _Closes #{number}_
 ```
 
 On push/PR failure: retry once. On second failure, set labels: ["{{LABEL_PREFIX}}:error"]
-and post an error comment via mcp__gateway__github-issues___add_issue_comment.
+and post an error comment via mcp__gateway__project-management___add_issue_comment.
 
 Exit cleanly. `{{LABEL_PREFIX}}:pr-completed` is the terminal success state.

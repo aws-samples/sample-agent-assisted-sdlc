@@ -13,7 +13,7 @@ Read ./.dev-claude/project.json for project IDs (owner, repo, issue_number).
 Record the current time — you will report elapsed duration when the PR is created.
 
 FIRST ACTION — remove trigger label and set explore:
-  Call mcp__gateway__github-issues___issue_write to set labels: ["{{LABEL_PREFIX}}:explore"]
+  Call mcp__gateway__project-management___issue_write to set labels: ["{{LABEL_PREFIX}}:explore"]
   (This replaces {{LABEL_PREFIX}}:start with {{LABEL_PREFIX}}:explore in a single call.)
 
 LABEL SCHEMA — the ONLY labels the agent may set:
@@ -89,18 +89,18 @@ Execute EVERY step in order. Do not skip or reorder.
      (A=added, M=modified, D=deleted, R=renamed)
    - For each A/M/R path, read the file content (`Read` tool) and add to
      the `files` array as `{path, content}`
-   - Call `mcp__gateway__github-code___push_files`:
+   - Call `mcp__gateway__source-control___push_files`:
        owner, repo from project.json
        branch: feat/issue-{number}
        message: matches the commit message from step 6
        files: array of {path, content}
-   - For D paths, call `mcp__gateway__github-code___delete_file` per path
+   - For D paths, call `mcp__gateway__source-control___delete_file` per path
    - On 422 "branch does not exist", first call
-     `mcp__gateway__github-code___create_branch` with
+     `mcp__gateway__source-control___create_branch` with
      branch=feat/issue-{number}, ref="main", then retry push_files
 8b. PR-existence re-check per the pr-verification skill.
     If open PR exists → skip step 9, proceed to step 10. If no PR → step 9.
-9. Call mcp__gateway__github-code___create_pull_request:
+9. Call mcp__gateway__source-control___create_pull_request:
      owner/repo from project.json
      title: "feat: {title} (#{number})"
      head: feat/issue-{number}
