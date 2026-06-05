@@ -214,11 +214,14 @@ class AssistantStrategy(ABC):
 
         Order (locked by issue #17):
           1. `git config --global --add safe.directory /mnt/workplace/gitproject` (idempotent).
-          2. Read current branch via `git rev-parse --abbrev-ref HEAD`, validate with `_validate_branch`.
-          3. Fetch + reset (public path: plain; private path: credential-helper-wrapped, mirrors
+          2. Probe for `.git` directory — fail fast with `WorkspaceSetupError` if missing,
+             since downstream `git rev-parse` would exit 128 with empty stdout and
+             `_validate_branch("")` would raise a misleading "Invalid branch" error.
+          3. Read current branch via `git rev-parse --abbrev-ref HEAD`, validate with `_validate_branch`.
+          4. Fetch + reset (public path: plain; private path: credential-helper-wrapped, mirrors
              `clone_private_repo` exactly — base64-decoded creds written to `/tmp/.git-creds`,
              cleanup on both success AND failure via `EXIT=$?; rm -f ...; --unset credential.helper`).
-          4. Existing rotation + `issue.json` refresh.
+          5. Existing rotation + `issue.json` refresh.
 
         Untracked files (`.dev-claude/`, `hooks/`, `skills/`, `.claude-plugin/`, `.mcp.json`,
         `settings.json`, `gateway-iam-proxy/`) survive `git reset --hard` provided they remain
@@ -233,7 +236,24 @@ class AssistantStrategy(ABC):
         )
         logger.info("safe_directory_configured")
 
-        # 2. Read current branch from the workspace and validate before shell interpolation.
+        # 2. Probe for `.git` before assuming this is a true re-invocation. The Setup Lambda
+        #    classifies "re-invocation" purely by the presence of `.dev-claude/invocation-1/` on
+        #    NFS, which can survive a microVM recycle while `.git/` is missing (e.g., partial
+        #    cleanup, manual workspace surgery). Without this probe `git rev-parse` exits 128
+        #    with empty stdout, `_validate_branch("")` raises `ValueError("Invalid branch")`, and
+        #    the operator gets a misleading error. Fail fast with a clear message instead.
+        git_probe = execute_command(
+            session_id,
+            "sh -c 'test -d /mnt/workplace/gitproject/.git && echo OK || echo MISSING'",
+            timeout=10,
+        )
+        if "OK" not in git_probe.get("stdout", ""):
+            raise WorkspaceSetupError(
+                "workspace .git missing — corrupted state, expected re-invocation but found "
+                "no repo. Wipe /mnt/workplace/gitproject and retrigger to recover."
+            )
+
+        # 3. Read current branch from the workspace and validate before shell interpolation.
         branch_result = execute_command(
             session_id,
             "sh -c 'cd /mnt/workplace/gitproject && git rev-parse --abbrev-ref HEAD'",
@@ -242,7 +262,7 @@ class AssistantStrategy(ABC):
         branch = _validate_branch(branch_result.get("stdout", "").strip())
         logger.info("branch_resolved", extra={"branch": branch})
 
-        # 3. Fetch + reset to track origin/<branch>.
+        # 4. Fetch + reset to track origin/<branch>.
         if token is None:
             # Public path: unauthenticated fetch.
             fetch_result = execute_command(
@@ -274,7 +294,7 @@ class AssistantStrategy(ABC):
             extra={"exit_code": fetch_result.get("exitCode")},
         )
 
-        # 4. Rotate: create next invocation-N directory and update 'current' symlink.
+        # 5. Rotate: create next invocation-N directory and update 'current' symlink.
         rotate_result = execute_command(
             session_id,
             "sh -c 'cd /mnt/workplace/gitproject/.dev-claude && "

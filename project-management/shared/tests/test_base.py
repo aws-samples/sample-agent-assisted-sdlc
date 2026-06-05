@@ -17,6 +17,7 @@ from assistants.base import (  # noqa: E402
     _validate_identifier,
     _write_file_chunked,
 )
+from errors import WorkspaceSetupError  # noqa: E402
 
 # --- _validate_identifier tests ---
 
@@ -279,13 +280,15 @@ def _branch_stdout_then_ok(branch: str = "feat/issue-17"):
 
     Order of execute_command calls inside refresh_for_reinvocation:
       1. safe.directory config        → return generic OK
-      2. git rev-parse --abbrev-ref   → return {"stdout": "<branch>\n"}
-      3. fetch + reset                → return OK
-      4. rotate                       → return invocation-2
-      5. issue.json write             → return OK
+      2. .git probe                   → return {"stdout": "OK\n"} (repo present)
+      3. git rev-parse --abbrev-ref   → return {"stdout": "<branch>\n"}
+      4. fetch + reset                → return OK
+      5. rotate                       → return invocation-2
+      6. issue.json write             → return OK
     """
     responses = [
         {"exitCode": 0, "stdout": "", "stderr": ""},
+        {"exitCode": 0, "stdout": "OK\n", "stderr": ""},
         {"exitCode": 0, "stdout": f"{branch}\n", "stderr": ""},
         {"exitCode": 0, "stdout": "OK", "stderr": ""},
         {"exitCode": 0, "stdout": "invocation-2", "stderr": ""},
@@ -311,35 +314,38 @@ class TestRefreshForReinvocation:
 
     @patch("assistants.base.execute_command")
     def test_public_path_command_order(self, mock_exec):
-        """Public path (token=None): safe.directory → rev-parse → fetch+reset → rotate → issue.json."""
+        """Public path (token=None): safe.directory → git probe → rev-parse → fetch+reset → rotate → issue.json."""
         mock_exec.side_effect = _branch_stdout_then_ok("feat/issue-17")
 
         self.strategy.refresh_for_reinvocation("session-1", self.issue, token=None)
 
         calls = [c[0][1] for c in mock_exec.call_args_list]
-        assert len(calls) == 5
+        assert len(calls) == 6
 
         # 1. safe.directory
         assert "safe.directory" in calls[0]
         assert "/mnt/workplace/gitproject" in calls[0]
 
-        # 2. rev-parse
-        assert "git rev-parse --abbrev-ref HEAD" in calls[1]
+        # 2. .git probe
+        assert "test -d /mnt/workplace/gitproject/.git" in calls[1]
 
-        # 3. fetch + reset (plain — no credential helper, no /tmp/.git-creds)
-        assert "git fetch origin" in calls[2]
-        assert "git reset --hard origin/feat/issue-17" in calls[2]
-        assert "credential.helper" not in calls[2]
-        assert "/tmp/.git-creds" not in calls[2]
-        assert "base64 -d" not in calls[2]
+        # 3. rev-parse
+        assert "git rev-parse --abbrev-ref HEAD" in calls[2]
 
-        # 4. rotate happens AFTER fetch+reset
-        assert "ln -sfn" in calls[3]
-        assert "invocation-" in calls[3]
+        # 4. fetch + reset (plain — no credential helper, no /tmp/.git-creds)
+        assert "git fetch origin" in calls[3]
+        assert "git reset --hard origin/feat/issue-17" in calls[3]
+        assert "credential.helper" not in calls[3]
+        assert "/tmp/.git-creds" not in calls[3]
+        assert "base64 -d" not in calls[3]
 
-        # 5. issue.json write
-        assert "issue.json" in calls[4]
-        assert "base64 -d" in calls[4]
+        # 5. rotate happens AFTER fetch+reset
+        assert "ln -sfn" in calls[4]
+        assert "invocation-" in calls[4]
+
+        # 6. issue.json write
+        assert "issue.json" in calls[5]
+        assert "base64 -d" in calls[5]
 
     @patch("assistants.base.execute_command")
     def test_private_path_uses_credential_helper(self, mock_exec):
@@ -349,8 +355,8 @@ class TestRefreshForReinvocation:
         self.strategy.refresh_for_reinvocation("session-1", self.issue, token="t_test")
 
         calls = [c[0][1] for c in mock_exec.call_args_list]
-        # Fetch+reset is the third call (after safe.directory, rev-parse).
-        fetch_cmd = calls[2]
+        # Fetch+reset is the fourth call (after safe.directory, .git probe, rev-parse).
+        fetch_cmd = calls[3]
 
         # credential-helper pattern present
         assert "base64 -d" in fetch_cmd
@@ -377,9 +383,10 @@ class TestRefreshForReinvocation:
         the cleanup AND that a non-zero fetch exit code does not prevent cleanup
         substrings from being present in the command string we recorded.
         """
-        # 5-step sequence, but the fetch step (index 2) returns FAILED (exit 128).
+        # 6-step sequence, but the fetch step (index 3) returns FAILED (exit 128).
         responses = [
             {"exitCode": 0, "stdout": "", "stderr": ""},  # safe.directory
+            {"exitCode": 0, "stdout": "OK\n", "stderr": ""},  # .git probe
             {"exitCode": 0, "stdout": "main\n", "stderr": ""},  # rev-parse
             {
                 "exitCode": 128,
@@ -399,7 +406,7 @@ class TestRefreshForReinvocation:
         )
 
         calls = [c[0][1] for c in mock_exec.call_args_list]
-        fetch_cmd = calls[2]
+        fetch_cmd = calls[3]
 
         # Cleanup substrings present in the failing-fetch command
         assert "EXIT=$?" in fetch_cmd
@@ -415,6 +422,7 @@ class TestRefreshForReinvocation:
         """If `git rev-parse` returns a malicious branch name, refresh aborts before fetch."""
         responses = [
             {"exitCode": 0, "stdout": "", "stderr": ""},  # safe.directory
+            {"exitCode": 0, "stdout": "OK\n", "stderr": ""},  # .git probe
             {"exitCode": 0, "stdout": "feat;rm -rf /\n", "stderr": ""},  # injection
         ]
         mock_exec.side_effect = responses
@@ -422,8 +430,8 @@ class TestRefreshForReinvocation:
         with pytest.raises(ValueError, match="Invalid branch"):
             self.strategy.refresh_for_reinvocation("session-1", self.issue, token=None)
 
-        # Only the first two calls should have happened — no fetch, no rotate.
-        assert mock_exec.call_count == 2
+        # Only safe.directory + .git probe + rev-parse should have happened — no fetch, no rotate.
+        assert mock_exec.call_count == 3
 
     @patch("assistants.base.execute_command")
     def test_rotation_and_issue_json_run_after_fetch(self, mock_exec):
@@ -440,6 +448,34 @@ class TestRefreshForReinvocation:
         issue_idx = next(i for i, c in enumerate(calls) if "issue.json" in c)
 
         assert rev_parse_idx < fetch_idx < rotate_idx < issue_idx
+
+    @patch("assistants.base.execute_command")
+    def test_missing_git_raises_workspace_setup_error(self, mock_exec):
+        """If `.git` is missing on disk, refresh aborts before rev-parse with a clear error.
+
+        Reproduces the failure observed live on issue #33 (2026-06-04 SFN execution
+        `issue-33-1780611770`): `.dev-claude/invocation-1/` survived a microVM recycle while
+        `.git/` did not, so the Setup Lambda classified the run as a re-invocation but
+        `git rev-parse --abbrev-ref HEAD` exited 128 with empty stdout, and
+        `_validate_branch("")` raised a misleading `ValueError("Invalid branch: ''")`.
+        The probe added in this fix must catch the missing-`.git` state and raise
+        `WorkspaceSetupError` with a clear remediation message.
+        """
+        responses = [
+            {"exitCode": 0, "stdout": "", "stderr": ""},  # safe.directory
+            {
+                "exitCode": 0,
+                "stdout": "MISSING\n",
+                "stderr": "",
+            },  # .git probe — repo missing
+        ]
+        mock_exec.side_effect = responses
+
+        with pytest.raises(WorkspaceSetupError, match=".git missing"):
+            self.strategy.refresh_for_reinvocation("session-1", self.issue, token=None)
+
+        # Only safe.directory + .git probe ran — no rev-parse, no fetch, no rotate.
+        assert mock_exec.call_count == 2
 
 
 # --- _write_file_chunked tests ---
