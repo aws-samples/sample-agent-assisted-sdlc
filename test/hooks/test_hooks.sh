@@ -172,25 +172,25 @@ run_scope_test() {
 }
 
 run_scope_test "allow correct owner/repo" \
-  '{"tool_name":"mcp__gateway__github-code___push_files","tool_input":{"owner":"myorg","repo":"myrepo","branch":"feat/issue-42"}}' 0
+  '{"tool_name":"mcp__gateway__source-control___push_files","tool_input":{"owner":"myorg","repo":"myrepo","branch":"feat/issue-42"}}' 0
 
 run_scope_test "block wrong owner" \
-  '{"tool_name":"mcp__gateway__github-code___push_files","tool_input":{"owner":"evil","repo":"myrepo","branch":"feat/issue-42"}}' 2
+  '{"tool_name":"mcp__gateway__source-control___push_files","tool_input":{"owner":"evil","repo":"myrepo","branch":"feat/issue-42"}}' 2
 
 run_scope_test "block wrong repo" \
-  '{"tool_name":"mcp__gateway__github-code___push_files","tool_input":{"owner":"myorg","repo":"wrong","branch":"feat/issue-42"}}' 2
+  '{"tool_name":"mcp__gateway__source-control___push_files","tool_input":{"owner":"myorg","repo":"wrong","branch":"feat/issue-42"}}' 2
 
 run_scope_test "block push to main" \
-  '{"tool_name":"mcp__gateway__github-code___push_files","tool_input":{"owner":"myorg","repo":"myrepo","branch":"main"}}' 2
+  '{"tool_name":"mcp__gateway__source-control___push_files","tool_input":{"owner":"myorg","repo":"myrepo","branch":"main"}}' 2
 
 run_scope_test "block push to master" \
-  '{"tool_name":"mcp__gateway__github-code___push_files","tool_input":{"owner":"myorg","repo":"myrepo","branch":"master"}}' 2
+  '{"tool_name":"mcp__gateway__source-control___push_files","tool_input":{"owner":"myorg","repo":"myrepo","branch":"master"}}' 2
 
 run_scope_test "allow correct issue comment" \
-  '{"tool_name":"mcp__gateway__github-issues___add_issue_comment","tool_input":{"owner":"myorg","repo":"myrepo","issue_number":42}}' 0
+  '{"tool_name":"mcp__gateway__project-management___add_issue_comment","tool_input":{"owner":"myorg","repo":"myrepo","issue_number":42}}' 0
 
 run_scope_test "block wrong issue number" \
-  '{"tool_name":"mcp__gateway__github-issues___add_issue_comment","tool_input":{"owner":"myorg","repo":"myrepo","issue_number":99}}' 2
+  '{"tool_name":"mcp__gateway__project-management___add_issue_comment","tool_input":{"owner":"myorg","repo":"myrepo","issue_number":99}}' 2
 
 # Test fail-closed when project.json missing
 TMPDIR2=$(mktemp -d)
@@ -213,7 +213,7 @@ run_scope_test_no_project() {
 }
 
 run_scope_test_no_project "block when project.json missing (fail-closed)" \
-  '{"tool_name":"mcp__gateway__github-code___push_files","tool_input":{"owner":"any","repo":"any","branch":"feat/issue-1"}}' 2
+  '{"tool_name":"mcp__gateway__source-control___push_files","tool_input":{"owner":"any","repo":"any","branch":"feat/issue-1"}}' 2
 
 # Cleanup
 rm -rf "$TMPDIR" "$TMPDIR2"
