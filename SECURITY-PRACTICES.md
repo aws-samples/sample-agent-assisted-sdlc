@@ -268,7 +268,7 @@ How each GitHub MCP runtime is scoped, how those scopes map to gateway target na
 | MCP runtime | CDK file (line) | `GITHUB_TOOLSETS` value | Gateway target name | Effective tool prefix the agent sees |
 |---|---|---|---|---|
 | project-management | [`lib/nested/project-management-stack.ts:44`](lib/nested/project-management-stack.ts) | `issues` (default) | `github-issues` | `mcp__gateway__github-issues___*` |
-| source-control | [`lib/nested/source-control-stack.ts:33,51`](lib/nested/source-control-stack.ts) | `repos,pull_requests,context` (default) | `github-code` | `mcp__gateway__github-code___*` |
+| source-control | [`lib/nested/source-control-stack.ts:33,51`](lib/nested/source-control-stack.ts) | `repos,pull_requests,context,actions` (default) | `github-code` | `mcp__gateway__github-code___*` |
 
 The gateway target names are registered in [`lib/sdlc-stack.ts:71`](lib/sdlc-stack.ts) (`github-code`) and [`lib/sdlc-stack.ts:91`](lib/sdlc-stack.ts) (`github-issues`), then handed to [`registerGatewayTarget()`](lib/utils.ts) by [`lib/nested/gateway-stack.ts:44`](lib/nested/gateway-stack.ts). The `mcp__gateway__<target>___*` prefix is the AgentCore Gateway naming convention — Claude Code sees one flat tool namespace and the gateway routes by prefix.
 
@@ -281,6 +281,10 @@ The project-management runtime is the surface the orchestrator uses to triage wo
 #### `repos,pull_requests,context` for source-control
 
 The source-control runtime does the actual code work: create branches, push files, open PRs, review diffs. `repos` covers branch and file operations, `pull_requests` covers PR creation and review, and `context` exposes identity tools that [`hooks/label-governance.sh`](coding-assistants/claude-code/plugin/hooks/label-governance.sh) needs to know which principal triggered the run. These three are the minimum that lets the implement and PR stages do their jobs.
+
+#### `actions` for source-control
+
+Adding `actions` to the source-control runtime exposes read-only access to GitHub Actions workflow data — primarily `get_job_logs` and `get_workflow_run_logs`, plus the seven supporting list/get tools (`list_workflow_runs`, `list_workflow_jobs`, `list_workflows`, `get_workflow_run`, `list_workflow_run_artifacts`, `download_workflow_run_artifact`, `get_workflow_run_usage`). The payoff is concrete: when CI fails on a PR the agent opened, it can read the failing job's log and produce a fix in the same invocation instead of waiting for a human to paste the log into a comment. The `actions` toolset also advertises four destructive/control-flow tools (`cancel_workflow_run`, `delete_workflow_run_logs`, `rerun_failed_jobs`, `rerun_workflow_run`); all four are denylisted in [`coding-assistants/claude-code/plugin/settings.json`](coding-assistants/claude-code/plugin/settings.json) so only the read tools reach the agent. Note: this toolset requires the installed GitHub App to grant `actions: read` on the repo — without it, `get_job_logs` returns `403 Forbidden` from MCP, which is a one-time GitHub App settings change made outside this codebase.
 
 #### Why neither runtime advertises `users` today
 
@@ -309,7 +313,7 @@ What blocks an unintended GitHub tool call, in the order the call traverses:
 ### Source-of-truth files
 
 - [`lib/nested/project-management-stack.ts`](lib/nested/project-management-stack.ts) — sets `GITHUB_TOOLSETS=issues` on the project-management runtime.
-- [`lib/nested/source-control-stack.ts`](lib/nested/source-control-stack.ts) — sets `GITHUB_TOOLSETS=repos,pull_requests,context` on the source-control runtime, both as the runtime env var and on the GitHub connector.
+- [`lib/nested/source-control-stack.ts`](lib/nested/source-control-stack.ts) — sets `GITHUB_TOOLSETS=repos,pull_requests,context,actions` on the source-control runtime, both as the runtime env var and on the GitHub connector.
 - [`lib/sdlc-stack.ts`](lib/sdlc-stack.ts) — declares the `github-code` and `github-issues` gateway target names that produce the agent-facing tool prefixes.
 - [`lib/nested/gateway-stack.ts`](lib/nested/gateway-stack.ts) — registers each target on the gateway via `registerGatewayTarget()`.
 - [`lib/utils.ts`](lib/utils.ts) — defines `registerGatewayTarget()` and `buildRuntimeEndpoint()`.
