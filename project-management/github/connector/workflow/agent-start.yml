@@ -78,4 +78,5 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           gh issue comment ${{ github.event.issue.number }} \
+            --repo "${{ github.repository }}" \
             --body "🤖 **Agent pipeline started.** The coding assistant is working on this issue. A PR will be created when ready."
