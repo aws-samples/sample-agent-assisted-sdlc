@@ -68,7 +68,7 @@ export function createStacks(app: cdk.App, config: SdlcConfig) {
   sourceControlStack.addDependency(infra);
   Aspects.of(sourceControlStack).add(new AwsSolutionsChecks({ verbose: true }));
   targets.push({
-    name: "github-code",
+    name: "source-control",
     runtimeArn: sourceControlStack.runtimeArn,
     imageTag: sourceControlStack.imageTag,
     resourcePriority: 5,
@@ -88,7 +88,7 @@ export function createStacks(app: cdk.App, config: SdlcConfig) {
     projectMgmtStack.addDependency(sourceControlStack);
     Aspects.of(projectMgmtStack).add(new AwsSolutionsChecks({ verbose: true }));
     targets.push({
-      name: "github-issues",
+      name: "project-management",
       runtimeArn: projectMgmtStack.runtimeArn,
       imageTag: projectMgmtStack.imageTag,
       resourcePriority: 10,
