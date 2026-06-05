@@ -10,6 +10,7 @@ import { NagSuppressions } from "cdk-nag";
 export interface McpGatewayProps {
   name: string;
   authorizerType?: string;
+  policyEngineId?: string;
 }
 
 export class McpGateway extends Construct {
@@ -46,6 +47,11 @@ export class McpGateway extends Construct {
           roleArn: this.gatewayRole.roleArn,
           protocolType: "MCP",
           authorizerType: props.authorizerType || "AWS_IAM",
+          ...(props.policyEngineId && {
+            policyEngineConfiguration: {
+              policyEngineId: props.policyEngineId,
+            },
+          }),
           protocolConfiguration: {
             mcp: {
               supportedVersions: ["2025-11-25"],
