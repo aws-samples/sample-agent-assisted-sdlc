@@ -1,5 +1,5 @@
 ---
-name: explore-agent
+name: explore
 description: Explores the codebase and assesses what needs to change
 model: sonnet
 permissionMode: dontAsk

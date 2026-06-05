@@ -1,5 +1,5 @@
 ---
-name: clarification-agent
+name: clarification
 description: Decides whether clarification is needed before implementation begins
 model: sonnet
 permissionMode: dontAsk

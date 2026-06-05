@@ -1,5 +1,5 @@
 ---
-name: critique-agent
+name: critique
 description: Reviews the implementation critically before the re-implementation pass
 model: sonnet
 permissionMode: dontAsk

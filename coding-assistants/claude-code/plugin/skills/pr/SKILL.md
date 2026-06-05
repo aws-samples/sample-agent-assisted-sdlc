@@ -1,5 +1,5 @@
 ---
-name: pr-agent
+name: pr
 description: Pushes the branch and creates the pull request
 model: sonnet
 permissionMode: dontAsk

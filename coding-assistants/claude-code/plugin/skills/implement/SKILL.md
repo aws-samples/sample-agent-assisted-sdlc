@@ -1,5 +1,5 @@
 ---
-name: implement-agent
+name: implement
 description: Implements the feature or applies critique/feedback fixes
 model: sonnet
 permissionMode: dontAsk
