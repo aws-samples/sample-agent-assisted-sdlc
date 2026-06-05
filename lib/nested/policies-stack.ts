@@ -1,7 +1,5 @@
 import * as cdk from "aws-cdk-lib";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as cr from "aws-cdk-lib/custom-resources";
-import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
 import * as lambda from "aws-cdk-lib/aws-lambda";
@@ -46,15 +44,6 @@ export class PoliciesStack extends cdk.Stack {
     const { config } = props;
     const customPolicies = config.resourcePolicies;
 
-    const policyActions = new iam.PolicyStatement({
-      actions: [
-        "bedrock-agentcore:PutResourcePolicy",
-        "bedrock-agentcore:DeleteResourcePolicy",
-        "bedrock-agentcore:GetResourcePolicy",
-      ],
-      resources: ["*"],
-    });
-
     // 1. Coding Assistant Runtime — only invokable by Lambda roles
     const assistantPolicy = buildPolicy(
       props.codingAssistantRuntimeArn,
@@ -68,26 +57,12 @@ export class PoliciesStack extends cdk.Stack {
       customPolicies?.codingAssistant,
     );
 
-    new cr.AwsCustomResource(this, "CodingAssistantPolicy", {
-      installLatestAwsSdk: true,
-      onCreate: {
-        service: "bedrock-agentcore-control",
-        action: "putResourcePolicy",
-        parameters: { resourceArn: props.codingAssistantRuntimeArn, policy: assistantPolicy },
-        physicalResourceId: cr.PhysicalResourceId.of("policy-coding-assistant"),
+    new cdk.CfnResource(this, "CodingAssistantPolicy", {
+      type: "AWS::BedrockAgentCore::ResourcePolicy",
+      properties: {
+        Policy: assistantPolicy,
+        ResourceArn: props.codingAssistantRuntimeArn,
       },
-      onUpdate: {
-        service: "bedrock-agentcore-control",
-        action: "putResourcePolicy",
-        parameters: { resourceArn: props.codingAssistantRuntimeArn, policy: assistantPolicy },
-        physicalResourceId: cr.PhysicalResourceId.of("policy-coding-assistant"),
-      },
-      onDelete: {
-        service: "bedrock-agentcore-control",
-        action: "deleteResourcePolicy",
-        parameters: { resourceArn: props.codingAssistantRuntimeArn },
-      },
-      policy: cr.AwsCustomResourcePolicy.fromStatements([policyActions]),
     });
 
     // 2. Gateway — only invokable by coding assistant execution role
@@ -103,26 +78,12 @@ export class PoliciesStack extends cdk.Stack {
       customPolicies?.gateway,
     );
 
-    new cr.AwsCustomResource(this, "GatewayPolicy", {
-      installLatestAwsSdk: true,
-      onCreate: {
-        service: "bedrock-agentcore-control",
-        action: "putResourcePolicy",
-        parameters: { resourceArn: props.gatewayArn, policy: gatewayPolicy },
-        physicalResourceId: cr.PhysicalResourceId.of("policy-gateway"),
+    new cdk.CfnResource(this, "GatewayPolicy", {
+      type: "AWS::BedrockAgentCore::ResourcePolicy",
+      properties: {
+        Policy: gatewayPolicy,
+        ResourceArn: props.gatewayArn,
       },
-      onUpdate: {
-        service: "bedrock-agentcore-control",
-        action: "putResourcePolicy",
-        parameters: { resourceArn: props.gatewayArn, policy: gatewayPolicy },
-        physicalResourceId: cr.PhysicalResourceId.of("policy-gateway"),
-      },
-      onDelete: {
-        service: "bedrock-agentcore-control",
-        action: "deleteResourcePolicy",
-        parameters: { resourceArn: props.gatewayArn },
-      },
-      policy: cr.AwsCustomResourcePolicy.fromStatements([policyActions]),
     });
 
     // 3. MCP Server Runtimes — only invokable by gateway role
@@ -139,26 +100,12 @@ export class PoliciesStack extends cdk.Stack {
         customPolicies?.mcpServers,
       );
 
-      new cr.AwsCustomResource(this, `McpServerPolicy${i}`, {
-        installLatestAwsSdk: true,
-        onCreate: {
-          service: "bedrock-agentcore-control",
-          action: "putResourcePolicy",
-          parameters: { resourceArn: runtimeArn, policy: mcpPolicy },
-          physicalResourceId: cr.PhysicalResourceId.of(`policy-mcp-${i}`),
+      new cdk.CfnResource(this, `McpServerPolicy${i}`, {
+        type: "AWS::BedrockAgentCore::ResourcePolicy",
+        properties: {
+          Policy: mcpPolicy,
+          ResourceArn: runtimeArn,
         },
-        onUpdate: {
-          service: "bedrock-agentcore-control",
-          action: "putResourcePolicy",
-          parameters: { resourceArn: runtimeArn, policy: mcpPolicy },
-          physicalResourceId: cr.PhysicalResourceId.of(`policy-mcp-${i}`),
-        },
-        onDelete: {
-          service: "bedrock-agentcore-control",
-          action: "deleteResourcePolicy",
-          parameters: { resourceArn: runtimeArn },
-        },
-        policy: cr.AwsCustomResourcePolicy.fromStatements([policyActions]),
       });
     }
 
@@ -179,11 +126,5 @@ export class PoliciesStack extends cdk.Stack {
         });
       }
     }
-
-    NagSuppressions.addStackSuppressions(this, [
-      { id: "AwsSolutions-IAM5", reason: "Resource policy management requires wildcard for agentcore resources" },
-      { id: "AwsSolutions-IAM4", reason: "Custom resource Lambda uses AWS managed execution role policy" },
-      { id: "AwsSolutions-L1", reason: "Custom resource Lambda runtime is managed by CDK" },
-    ], true);
   }
 }
