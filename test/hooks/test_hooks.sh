@@ -64,6 +64,9 @@ run_test "block rm -rf /" "bash-guard.sh" \
 run_test "allow rm in workspace" "bash-guard.sh" \
   '{"tool_input":{"command":"rm -rf /mnt/workplace/gitproject/node_modules"}}' 0
 
+run_test "allow rm -rf in /tmp" "bash-guard.sh" \
+  '{"tool_input":{"command":"rm -rf /tmp/cdk.out"}}' 0
+
 run_test "block git push --force" "bash-guard.sh" \
   '{"tool_input":{"command":"git push --force origin main"}}' 2
 

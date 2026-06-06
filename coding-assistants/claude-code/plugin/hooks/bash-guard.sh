@@ -9,8 +9,8 @@ if [ -z "$COMMAND" ]; then
   exit 0
 fi
 
-# Block destructive filesystem operations outside workspace
-if echo "$COMMAND" | grep -qE 'rm\s+(-[a-zA-Z]*[rf]){1,}.*\s+/[^m]'; then
+# Block destructive filesystem operations outside workspace and /tmp
+if echo "$COMMAND" | grep -qE 'rm\s+(-[a-zA-Z]*[rf]){1,}.*\s+/[^mt]'; then
   echo "BLOCKED: Destructive rm command targeting paths outside workspace."
   exit 2
 fi

@@ -38,8 +38,11 @@ RE-INVOCATION RUN (feedback.md exists):
   - `git add <explicit paths>` then `git commit -m "fix: address feedback (#{number})"`
 
 AFTER COMMITTING — RECLAIM DISK SPACE (MANDATORY, 1 GB session cap):
+The /mnt/workplace mount is hard-capped at 1 GB. Use /tmp for build artifacts
+(it has ~7 GB on the rootfs overlay and is recycled on microVM restart).
+When running cdk synth, use `--output /tmp/cdk.out` to avoid filling session storage.
 ```bash
-rm -rf node_modules cdk.out gateway-iam-proxy/node_modules .ruff_cache 2>/dev/null
+rm -rf node_modules cdk.out gateway-iam-proxy/node_modules .ruff_cache /tmp/cdk.out 2>/dev/null
 ```
 
 AFTER COMMITTING — UPDATE CLAUDE.md IF NEEDED:
