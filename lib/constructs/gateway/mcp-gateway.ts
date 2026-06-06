@@ -10,7 +10,7 @@ import { NagSuppressions } from "cdk-nag";
 export interface McpGatewayProps {
   name: string;
   authorizerType?: string;
-  policyEngineId?: string;
+  enablePolicyEngine?: boolean;
 }
 
 export class McpGateway extends Construct {
@@ -37,8 +37,8 @@ export class McpGateway extends Construct {
       ],
     }));
 
-    // Required for Policy Engine evaluation (only when policyEngineId is set)
-    if (props.policyEngineId) {
+    // Required for Policy Engine evaluation (only when enablePolicyEngine is set)
+    if (props.enablePolicyEngine) {
       this.gatewayRole.addToPolicy(new iam.PolicyStatement({
         actions: [
           "bedrock-agentcore:AuthorizeAction",
@@ -62,11 +62,6 @@ export class McpGateway extends Construct {
           roleArn: this.gatewayRole.roleArn,
           protocolType: "MCP",
           authorizerType: props.authorizerType || "AWS_IAM",
-          ...(props.policyEngineId && {
-            policyEngineConfiguration: {
-              policyEngineId: props.policyEngineId,
-            },
-          }),
           protocolConfiguration: {
             mcp: {
               supportedVersions: ["2025-11-25"],

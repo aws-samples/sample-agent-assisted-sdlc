@@ -9,6 +9,7 @@ import { ProjectManagementStack } from "./nested/project-management-stack";
 import { DeveloperMcpStack } from "./nested/developer-mcp-stack";
 import { AssistantStack } from "./nested/assistant-stack";
 import { PoliciesStack } from "./nested/policies-stack";
+import { AgentCorePolicyStack } from "./nested/agentcore-policy-stack";
 import { SdlcConfig } from "./config";
 
 export function createStacks(app: cdk.App, config: SdlcConfig) {
@@ -155,7 +156,7 @@ export function createStacks(app: cdk.App, config: SdlcConfig) {
       ...(config.projectManagement.type === "github" ? [projectMgmtStack!.executionRoleArn] : []),
     ];
 
-    const policiesStack = new PoliciesStack(app, `${config.project}-policies`, {
+    const policiesStack = new PoliciesStack(app, `${config.project}-resource-based-policies`, {
       env,
       config,
       codingAssistantRuntimeArn: assistantStack.assistant.runtimeArn,
@@ -170,5 +171,19 @@ export function createStacks(app: cdk.App, config: SdlcConfig) {
     });
     policiesStack.addDependency(assistantStack);
     Aspects.of(policiesStack).add(new AwsSolutionsChecks({ verbose: true }));
+  }
+
+  // ═══════════════════════════════════════════════
+  // STACK 8: AgentCore Cedar Policies (optional)
+  // ═══════════════════════════════════════════════
+  if (config.gateway?.policyEngine?.enabled) {
+    const agentCorePolicyStack = new AgentCorePolicyStack(app, `${config.project}-agentcore-policy`, {
+      env,
+      config,
+      gatewayArn: gatewayStack.gateway.gatewayArn,
+      gatewayId: gatewayStack.gatewayId,
+    });
+    agentCorePolicyStack.addDependency(gatewayStack);
+    Aspects.of(agentCorePolicyStack).add(new AwsSolutionsChecks({ verbose: true }));
   }
 }
