@@ -176,7 +176,7 @@ export function createStacks(app: cdk.App, config: SdlcConfig) {
   // ══════════════════════════════════
   // STACK 8: AgentCore Cedar Policies
   // ══════════════════════════════════
-  const agentCorePolicyStack = new AgentCorePolicyStack(app, `${config.project}-agentcore-policy`, {
+  const agentCorePolicyStack = new AgentCorePolicyStack(app, `${config.project}-stack-agentcore-policy`, {
     env,
     config,
     gatewayArn: gatewayStack.gateway.gatewayArn,
