@@ -87,8 +87,7 @@ export class GatewayStack extends cdk.Stack {
       timeout: cdk.Duration.minutes(5),
       role: attachFnRole,
       code: lambda.Code.fromInline(`
-import json, time, urllib.request, boto3
-from botocore.config import Config
+import json, os, time, urllib.request
 
 def send_response(event, context, status, data=None, reason=None):
     body = json.dumps({
@@ -104,36 +103,54 @@ def send_response(event, context, status, data=None, reason=None):
     req.add_header("Content-Type", "")
     urllib.request.urlopen(req)
 
+def signed_request(method, url, body=None):
+    """Make a SigV4-signed HTTP request to AgentCore control plane."""
+    import botocore.session
+    from botocore.auth import SigV4Auth
+    from botocore.awsrequest import AWSRequest
+    session = botocore.session.get_session()
+    creds = session.get_credentials().get_frozen_credentials()
+    headers = {"Content-Type": "application/json"}
+    req = AWSRequest(method=method, url=url, data=body, headers=headers)
+    SigV4Auth(creds, "bedrock-agentcore", session.get_config_variable("region") or "us-west-2").add_auth(req)
+    http_req = urllib.request.Request(url, data=body.encode() if body else None, method=method)
+    for k, v in dict(req.headers).items():
+        http_req.add_header(k, v)
+    resp = urllib.request.urlopen(http_req)
+    return json.loads(resp.read())
+
 def handler(event, context):
     print(json.dumps(event))
     props = event["ResourceProperties"]
     request_type = event["RequestType"]
-    client = boto3.client("bedrock-agentcore-control", config=Config(parameter_validation=False))
+    region = os.environ.get("AWS_REGION", "us-west-2")
+    base = f"https://bedrock-agentcore-control.{region}.amazonaws.com"
+    gw_id = props["GatewayId"]
     try:
         if request_type in ("Create", "Update"):
-            client.update_gateway(
-                gatewayIdentifier=props["GatewayId"],
-                name=props["GatewayName"],
-                roleArn=props["GatewayRoleArn"],
-                authorizerType=props["AuthorizerType"],
-                policyEngineConfiguration={"arn": props["PolicyEngineArn"], "mode": "ENFORCE"},
-            )
+            body = json.dumps({
+                "name": props["GatewayName"],
+                "roleArn": props["GatewayRoleArn"],
+                "authorizerType": props["AuthorizerType"],
+                "policyEngineConfiguration": {"arn": props["PolicyEngineArn"], "mode": "ENFORCE"},
+            })
+            signed_request("PUT", f"{base}/gateways/{gw_id}", body)
             for _ in range(30):
                 time.sleep(10)
-                resp = client.get_gateway(gatewayIdentifier=props["GatewayId"])
-                print(f"Gateway status: {resp['status']}")
-                if resp["status"] == "READY":
+                resp = signed_request("GET", f"{base}/gateways/{gw_id}")
+                print(f"Gateway status: {resp.get('status')}")
+                if resp.get("status") == "READY":
                     send_response(event, context, "SUCCESS")
                     return
             send_response(event, context, "FAILED", reason="Gateway not READY in 5 min")
         elif request_type == "Delete":
             try:
-                client.update_gateway(
-                    gatewayIdentifier=props["GatewayId"],
-                    name=props["GatewayName"],
-                    roleArn=props["GatewayRoleArn"],
-                    authorizerType=props["AuthorizerType"],
-                )
+                body = json.dumps({
+                    "name": props["GatewayName"],
+                    "roleArn": props["GatewayRoleArn"],
+                    "authorizerType": props["AuthorizerType"],
+                })
+                signed_request("PUT", f"{base}/gateways/{gw_id}", body)
             except Exception as e:
                 print(f"Detach failed (non-fatal): {e}")
             send_response(event, context, "SUCCESS")
