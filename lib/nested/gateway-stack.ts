@@ -134,10 +134,10 @@ def handler(event, context):
                 "authorizerType": props["AuthorizerType"],
                 "policyEngineConfiguration": {"arn": props["PolicyEngineArn"], "mode": "ENFORCE"},
             })
-            signed_request("PUT", f"{base}/gateways/{gw_id}", body)
+            signed_request("PUT", f"{base}/gateways/{gw_id}/", body)
             for _ in range(30):
                 time.sleep(10)
-                resp = signed_request("GET", f"{base}/gateways/{gw_id}")
+                resp = signed_request("GET", f"{base}/gateways/{gw_id}/")
                 print(f"Gateway status: {resp.get('status')}")
                 if resp.get("status") == "READY":
                     send_response(event, context, "SUCCESS")
@@ -150,7 +150,7 @@ def handler(event, context):
                     "roleArn": props["GatewayRoleArn"],
                     "authorizerType": props["AuthorizerType"],
                 })
-                signed_request("PUT", f"{base}/gateways/{gw_id}", body)
+                signed_request("PUT", f"{base}/gateways/{gw_id}/", body)
             except Exception as e:
                 print(f"Detach failed (non-fatal): {e}")
             send_response(event, context, "SUCCESS")
