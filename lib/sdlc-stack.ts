@@ -9,7 +9,6 @@ import { ProjectManagementStack } from "./nested/project-management-stack";
 import { DeveloperMcpStack } from "./nested/developer-mcp-stack";
 import { AssistantStack } from "./nested/assistant-stack";
 import { PoliciesStack } from "./nested/policies-stack";
-import { AgentCorePolicyStack } from "./nested/agentcore-policy-stack";
 import { SdlcConfig } from "./config";
 
 export function createStacks(app: cdk.App, config: SdlcConfig) {
@@ -173,18 +172,4 @@ export function createStacks(app: cdk.App, config: SdlcConfig) {
     Aspects.of(policiesStack).add(new AwsSolutionsChecks({ verbose: true }));
   }
 
-  // ══════════════════════════════════
-  // STACK 8: AgentCore Cedar Policies
-  // ══════════════════════════════════
-  const agentCorePolicyStack = new AgentCorePolicyStack(app, `${config.project}-stack-agentcore-policy`, {
-    env,
-    config,
-    gatewayArn: gatewayStack.gateway.gatewayArn,
-    gatewayId: gatewayStack.gatewayId,
-    gatewayName: `${config.project}-gateway`,
-    gatewayRoleArn: gatewayStack.gateway.gatewayRole.roleArn,
-    gatewayAuthorizerType: config.gateway?.authorizerType || "AWS_IAM",
-  });
-  agentCorePolicyStack.addDependency(gatewayStack);
-  Aspects.of(agentCorePolicyStack).add(new AwsSolutionsChecks({ verbose: true }));
 }
