@@ -1,29 +1,37 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""AgentCore entrypoint for GitHub MCP Server (source-control).
+"""AgentCore entrypoint for GitHub MCP Server.
 
-Generates a GitHub App installation token from Secrets Manager, then exec's
-the Go github-mcp-server binary directly on port 8000.
+Runs the Go GitHub MCP server in HTTP mode on port 8082, with a reverse proxy
+on port 8000 (AgentCore service contract) that injects the GitHub token into
+every request.
 
-Previous versions ran a Python HTTP reverse proxy between port 8000 and the
-Go binary on 8082, but that proxy could not stream SSE responses — it called
-resp.read() which closed the connection immediately, killing every MCP session
-within milliseconds. The fix is to remove the proxy entirely and let the Go
-binary handle Streamable HTTP MCP natively.
+The proxy streams SSE responses chunk-by-chunk rather than buffering with
+resp.read() — the previous buffering approach closed the SSE connection
+immediately, killing every MCP session within milliseconds.
+
+Token is generated directly from the GitHub App private key (stored in Secrets Manager)
+— no external Lambda needed.
 """
 
 import json
 import os
+import subprocess
+import threading
 import time
 import urllib.error
 import urllib.request
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import boto3
 import jwt
 from log import get_logger
 
 logger = get_logger(__name__)
+
+GITHUB_TOKEN = None
+GO_SERVER_URL = "http://127.0.0.1:8082/mcp"
 
 
 def get_github_token():
@@ -57,6 +65,96 @@ def get_github_token():
         return data["token"]
 
 
+class ProxyHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length) if content_length else b""
+
+        req = urllib.request.Request(GO_SERVER_URL, data=body)
+        req.add_header(
+            "Content-Type", self.headers.get("Content-Type", "application/json")
+        )
+        req.add_header(
+            "Accept", self.headers.get("Accept", "application/json, text/event-stream")
+        )
+        req.add_header("Authorization", f"Bearer {GITHUB_TOKEN}")
+
+        session_id = self.headers.get("mcp-session-id")
+        if session_id:
+            req.add_header("mcp-session-id", session_id)
+
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                resp_body = resp.read()
+                self.send_response(resp.status)
+                for key, value in resp.getheaders():
+                    if key.lower() not in ("transfer-encoding", "connection"):
+                        self.send_header(key, value)
+                self.end_headers()
+                self.wfile.write(resp_body)
+        except urllib.error.HTTPError as e:
+            self.send_response(e.code)
+            self.end_headers()
+            self.wfile.write(e.read())
+
+    def do_GET(self):
+        """Stream SSE responses chunk-by-chunk to keep the connection alive.
+
+        The Go MCP server uses Server-Sent Events (SSE) for the notification
+        channel. We must forward chunks as they arrive — NOT buffer with
+        resp.read() which would close the connection immediately.
+        """
+        req = urllib.request.Request(f"{GO_SERVER_URL}{self.path}")
+        req.add_header("Accept", "text/event-stream")
+        req.add_header("Authorization", f"Bearer {GITHUB_TOKEN}")
+
+        session_id = self.headers.get("mcp-session-id")
+        if session_id:
+            req.add_header("mcp-session-id", session_id)
+
+        try:
+            resp = urllib.request.urlopen(req, timeout=3600)
+            self.send_response(resp.status)
+            for key, value in resp.getheaders():
+                if key.lower() not in ("transfer-encoding", "connection"):
+                    self.send_header(key, value)
+            self.end_headers()
+
+            while True:
+                chunk = resp.read(4096)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
+        except urllib.error.HTTPError as e:
+            self.send_response(e.code)
+            self.end_headers()
+            self.wfile.write(e.read())
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
+    def do_DELETE(self):
+        req = urllib.request.Request(GO_SERVER_URL, method="DELETE")
+        req.add_header("Authorization", f"Bearer {GITHUB_TOKEN}")
+
+        session_id = self.headers.get("mcp-session-id")
+        if session_id:
+            req.add_header("mcp-session-id", session_id)
+
+        try:
+            with urllib.request.urlopen(req, timeout=10) as resp:
+                self.send_response(resp.status)
+                self.end_headers()
+                self.wfile.write(resp.read())
+        except urllib.error.HTTPError as e:
+            self.send_response(e.code)
+            self.end_headers()
+            self.wfile.write(e.read())
+
+    def log_message(self, format, *args):
+        pass
+
+
 def _required_toolsets() -> str:
     """Read and validate GITHUB_TOOLSETS. Raise RuntimeError on unset/empty."""
     toolsets = os.environ.get("GITHUB_TOOLSETS", "")
@@ -69,20 +167,32 @@ def _required_toolsets() -> str:
     return toolsets
 
 
-if __name__ == "__main__":
+def start_go_server():
     toolsets = _required_toolsets()
-    token = get_github_token()
-    logger.info("token_generated_starting_go_server")
-
-    os.environ["GITHUB_PERSONAL_ACCESS_TOKEN"] = token
-    os.execv(
-        "/usr/local/bin/github-mcp-server",
+    env = {**os.environ, "GITHUB_PERSONAL_ACCESS_TOKEN": GITHUB_TOKEN}
+    subprocess.run(
         [
-            "github-mcp-server",
+            "/usr/local/bin/github-mcp-server",
             "http",
             "--port",
-            "8000",
+            "8082",
             "--toolsets",
             toolsets,
         ],
+        env=env,
     )
+
+
+if __name__ == "__main__":
+    _required_toolsets()
+    GITHUB_TOKEN = get_github_token()
+    logger.info("token_generated_starting_go_server")
+
+    go_thread = threading.Thread(target=start_go_server, daemon=True)
+    go_thread.start()
+
+    time.sleep(2)
+
+    logger.info("proxy_listening", extra={"port": 8000})
+    server = HTTPServer(("0.0.0.0", 8000), ProxyHandler)
+    server.serve_forever()
