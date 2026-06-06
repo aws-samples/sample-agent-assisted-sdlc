@@ -27,7 +27,7 @@ export class AgentCorePolicyStack extends cdk.Stack {
         Name: config.project.replace(/-/g, "_") + "_policy_engine",
       },
     });
-    this.policyEngineId = policyEngine.ref;
+    this.policyEngineId = policyEngine.getAtt("PolicyEngineId").toString();
 
     // Attach PolicyEngine to Gateway via UpdateGateway
     const updateGateway = new cr.AwsCustomResource(this, "AttachPolicyEngine", {
