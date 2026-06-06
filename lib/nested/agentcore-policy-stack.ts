@@ -45,6 +45,11 @@ export class AgentCorePolicyStack extends cdk.Stack {
           name: gatewayName,
           roleArn: gatewayRoleArn,
           authorizerType: gatewayAuthorizerType,
+          protocolConfiguration: {
+            mcp: {
+              supportedVersions: ["2025-11-25"],
+            },
+          },
           policyEngineConfiguration: {
             arn: policyEngineArn,
             mode: "ENFORCE",
@@ -60,6 +65,11 @@ export class AgentCorePolicyStack extends cdk.Stack {
           name: gatewayName,
           roleArn: gatewayRoleArn,
           authorizerType: gatewayAuthorizerType,
+          protocolConfiguration: {
+            mcp: {
+              supportedVersions: ["2025-11-25"],
+            },
+          },
           policyEngineConfiguration: {
             arn: policyEngineArn,
             mode: "ENFORCE",
@@ -75,6 +85,11 @@ export class AgentCorePolicyStack extends cdk.Stack {
           name: gatewayName,
           roleArn: gatewayRoleArn,
           authorizerType: gatewayAuthorizerType,
+          protocolConfiguration: {
+            mcp: {
+              supportedVersions: ["2025-11-25"],
+            },
+          },
         },
         ignoreErrorCodesMatching: "ResourceNotFoundException",
       },
