@@ -10,6 +10,9 @@ export interface AgentCorePolicyStackProps extends cdk.StackProps {
   config: SdlcConfig;
   gatewayArn: string;
   gatewayId: string;
+  gatewayName: string;
+  gatewayRoleArn: string;
+  gatewayAuthorizerType: string;
 }
 
 export class AgentCorePolicyStack extends cdk.Stack {
@@ -18,7 +21,7 @@ export class AgentCorePolicyStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: AgentCorePolicyStackProps) {
     super(scope, id, props);
 
-    const { config, gatewayArn, gatewayId } = props;
+    const { config, gatewayArn, gatewayId, gatewayName, gatewayRoleArn, gatewayAuthorizerType } = props;
 
     // Create PolicyEngine
     const policyEngine = new cdk.CfnResource(this, "PolicyEngine", {
@@ -30,6 +33,8 @@ export class AgentCorePolicyStack extends cdk.Stack {
     this.policyEngineId = policyEngine.getAtt("PolicyEngineId").toString();
 
     // Attach PolicyEngine to Gateway via UpdateGateway
+    // updateGateway is a full-replace API — all required fields must be passed
+    const policyEngineArn = policyEngine.getAtt("PolicyEngineArn").toString();
     const updateGateway = new cr.AwsCustomResource(this, "AttachPolicyEngine", {
       installLatestAwsSdk: true,
       onCreate: {
@@ -37,8 +42,12 @@ export class AgentCorePolicyStack extends cdk.Stack {
         action: "updateGateway",
         parameters: {
           gatewayIdentifier: gatewayId,
+          name: gatewayName,
+          roleArn: gatewayRoleArn,
+          authorizerType: gatewayAuthorizerType,
           policyEngineConfiguration: {
-            policyEngineId: this.policyEngineId,
+            arn: policyEngineArn,
+            mode: "ENFORCED",
           },
         },
         physicalResourceId: cr.PhysicalResourceId.of(`policy-engine-attachment-${gatewayId}`),
@@ -48,8 +57,12 @@ export class AgentCorePolicyStack extends cdk.Stack {
         action: "updateGateway",
         parameters: {
           gatewayIdentifier: gatewayId,
+          name: gatewayName,
+          roleArn: gatewayRoleArn,
+          authorizerType: gatewayAuthorizerType,
           policyEngineConfiguration: {
-            policyEngineId: this.policyEngineId,
+            arn: policyEngineArn,
+            mode: "ENFORCED",
           },
         },
         physicalResourceId: cr.PhysicalResourceId.of(`policy-engine-attachment-${gatewayId}`),
@@ -59,7 +72,9 @@ export class AgentCorePolicyStack extends cdk.Stack {
         action: "updateGateway",
         parameters: {
           gatewayIdentifier: gatewayId,
-          policyEngineConfiguration: null,
+          name: gatewayName,
+          roleArn: gatewayRoleArn,
+          authorizerType: gatewayAuthorizerType,
         },
         ignoreErrorCodesMatching: "ResourceNotFoundException",
       },
@@ -67,6 +82,10 @@ export class AgentCorePolicyStack extends cdk.Stack {
         new iam.PolicyStatement({
           actions: ["bedrock-agentcore:UpdateGateway", "bedrock-agentcore:GetGateway"],
           resources: ["*"],
+        }),
+        new iam.PolicyStatement({
+          actions: ["iam:PassRole"],
+          resources: [gatewayRoleArn],
         }),
       ]),
     });

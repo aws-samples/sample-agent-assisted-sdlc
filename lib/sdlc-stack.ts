@@ -181,6 +181,9 @@ export function createStacks(app: cdk.App, config: SdlcConfig) {
     config,
     gatewayArn: gatewayStack.gateway.gatewayArn,
     gatewayId: gatewayStack.gatewayId,
+    gatewayName: `${config.project}-gateway`,
+    gatewayRoleArn: gatewayStack.gateway.gatewayRole.roleArn,
+    gatewayAuthorizerType: config.gateway?.authorizerType || "AWS_IAM",
   });
   agentCorePolicyStack.addDependency(gatewayStack);
   Aspects.of(agentCorePolicyStack).add(new AwsSolutionsChecks({ verbose: true }));
