@@ -24,7 +24,7 @@ export class AgentCorePolicyStack extends cdk.Stack {
     const policyEngine = new cdk.CfnResource(this, "PolicyEngine", {
       type: "AWS::BedrockAgentCore::PolicyEngine",
       properties: {
-        Name: `${config.project}_policy_engine`,
+        Name: config.project.replace(/-/g, "_") + "_policy_engine",
       },
     });
     this.policyEngineId = policyEngine.ref;
@@ -86,7 +86,7 @@ export class AgentCorePolicyStack extends cdk.Stack {
         Name: `${projectPrefix}_branch_protect`,
         PolicyEngineId: this.policyEngineId,
         Definition: {
-          Cedar: `
+          Cedar: { Statement: `
 forbid(
   principal is AgentCore::IamEntity,
   action in [
@@ -100,7 +100,7 @@ when {
   context.input has branch &&
   (context.input.branch == "main" || context.input.branch == "master")
 };
-`.trim(),
+`.trim() },
         },
       },
     });
@@ -113,7 +113,7 @@ when {
         Name: `${projectPrefix}_branch_pattern`,
         PolicyEngineId: this.policyEngineId,
         Definition: {
-          Cedar: `
+          Cedar: { Statement: `
 forbid(
   principal is AgentCore::IamEntity,
   action in [
@@ -126,7 +126,7 @@ when {
   context.input has branch &&
   !(context.input.branch like "feat/issue-*")
 };
-`.trim(),
+`.trim() },
         },
       },
     });
@@ -139,7 +139,7 @@ when {
         Name: `${projectPrefix}_label_gov`,
         PolicyEngineId: this.policyEngineId,
         Definition: {
-          Cedar: `
+          Cedar: { Statement: `
 forbid(
   principal is AgentCore::IamEntity,
   action == AgentCore::Action::"project-management___issue_write",
@@ -149,7 +149,7 @@ when {
   context.input has labels &&
   context.input.labels.contains("${labelPrefix}:start")
 };
-`.trim(),
+`.trim() },
         },
       },
     });
@@ -162,13 +162,13 @@ when {
         Name: `${projectPrefix}_default_permit`,
         PolicyEngineId: this.policyEngineId,
         Definition: {
-          Cedar: `
+          Cedar: { Statement: `
 permit(
   principal is AgentCore::IamEntity,
   action,
   resource == AgentCore::Gateway::"${gatewayArn}"
 );
-`.trim(),
+`.trim() },
         },
       },
     });
