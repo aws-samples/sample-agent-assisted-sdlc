@@ -33,8 +33,9 @@ export class GatewayStack extends cdk.Stack {
 
     // Create PolicyEngine if enabled
     let policyEngineId: string | undefined;
+    let policyEngine: cdk.CfnResource | undefined;
     if (config.gateway?.policyEngine?.enabled) {
-      const policyEngine = new cdk.CfnResource(this, "PolicyEngine", {
+      policyEngine = new cdk.CfnResource(this, "PolicyEngine", {
         type: "AWS::BedrockAgentCore::PolicyEngine",
         properties: {
           Name: `${config.project}_policy_engine`,
@@ -48,6 +49,11 @@ export class GatewayStack extends cdk.Stack {
       authorizerType: config.gateway?.authorizerType || "AWS_IAM",
       policyEngineId: policyEngineId,
     });
+
+    // Ensure PolicyEngine is created before Gateway references it
+    if (config.gateway?.policyEngine?.enabled && policyEngine) {
+      this.gateway.node.addDependency(policyEngine);
+    }
 
     this.gatewayId = this.gateway.gatewayId;
     this.gatewayUrl = this.gateway.gatewayUrl;
@@ -81,7 +87,8 @@ export class GatewayStack extends cdk.Stack {
         properties: {
           Name: `${projectPrefix}_branch_protect`,
           PolicyEngineId: policyEngineId,
-          Statement: `
+          Definition: {
+            Cedar: `
 forbid(
   principal is AgentCore::IamEntity,
   action in [
@@ -96,6 +103,7 @@ when {
   (context.input.branch == "main" || context.input.branch == "master")
 };
 `.trim(),
+          },
         },
       });
 
@@ -105,7 +113,8 @@ when {
         properties: {
           Name: `${projectPrefix}_branch_pattern`,
           PolicyEngineId: policyEngineId,
-          Statement: `
+          Definition: {
+            Cedar: `
 forbid(
   principal is AgentCore::IamEntity,
   action in [
@@ -119,6 +128,7 @@ when {
   !(context.input.branch like "feat/issue-*")
 };
 `.trim(),
+          },
         },
       });
 
@@ -128,7 +138,8 @@ when {
         properties: {
           Name: `${projectPrefix}_label_gov`,
           PolicyEngineId: policyEngineId,
-          Statement: `
+          Definition: {
+            Cedar: `
 forbid(
   principal is AgentCore::IamEntity,
   action == AgentCore::Action::"project-management___issue_write",
@@ -139,6 +150,7 @@ when {
   context.input.labels.contains("${labelPrefix}:start")
 };
 `.trim(),
+          },
         },
       });
 
@@ -148,13 +160,15 @@ when {
         properties: {
           Name: `${projectPrefix}_default_permit`,
           PolicyEngineId: policyEngineId,
-          Statement: `
+          Definition: {
+            Cedar: `
 permit(
   principal is AgentCore::IamEntity,
   action,
   resource == AgentCore::Gateway::"${gatewayArn}"
 );
 `.trim(),
+          },
         },
       });
     }
