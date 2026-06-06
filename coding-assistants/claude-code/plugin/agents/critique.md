@@ -31,8 +31,9 @@ mcp__gateway__project-management___add_issue_comment (use owner, repo, issue_num
 Prefix the comment with `### Critique Report\n\n`.
 
 AFTER WRITING critique.md — RECLAIM DISK SPACE (MANDATORY, 1 GB session cap):
+Use `--output /tmp/cdk.out` when running cdk synth (/tmp has ~7 GB, recycled on restart).
 ```bash
-rm -rf node_modules cdk.out gateway-iam-proxy/node_modules .ruff_cache 2>/dev/null
+rm -rf node_modules cdk.out gateway-iam-proxy/node_modules .ruff_cache /tmp/cdk.out 2>/dev/null
 ```
 
 Read-only. Do not modify any source files.

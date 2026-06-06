@@ -7,6 +7,10 @@ Runs the Go GitHub MCP server in HTTP mode on port 8082, with a reverse proxy
 on port 8000 (AgentCore service contract) that injects the GitHub token into
 every request.
 
+The proxy streams SSE responses chunk-by-chunk rather than buffering with
+resp.read() — the previous buffering approach closed the SSE connection
+immediately, killing every MCP session within milliseconds.
+
 Token is generated directly from the GitHub App private key (stored in Secrets Manager)
 — no external Lambda needed.
 """
@@ -94,6 +98,12 @@ class ProxyHandler(BaseHTTPRequestHandler):
             self.wfile.write(e.read())
 
     def do_GET(self):
+        """Stream SSE responses chunk-by-chunk to keep the connection alive.
+
+        The Go MCP server uses Server-Sent Events (SSE) for the notification
+        channel. We must forward chunks as they arrive — NOT buffer with
+        resp.read() which would close the connection immediately.
+        """
         req = urllib.request.Request(f"{GO_SERVER_URL}{self.path}")
         req.add_header("Accept", "text/event-stream")
         req.add_header("Authorization", f"Bearer {GITHUB_TOKEN}")
@@ -103,17 +113,25 @@ class ProxyHandler(BaseHTTPRequestHandler):
             req.add_header("mcp-session-id", session_id)
 
         try:
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                self.send_response(resp.status)
-                for key, value in resp.getheaders():
-                    if key.lower() not in ("transfer-encoding", "connection"):
-                        self.send_header(key, value)
-                self.end_headers()
-                self.wfile.write(resp.read())
+            resp = urllib.request.urlopen(req, timeout=3600)
+            self.send_response(resp.status)
+            for key, value in resp.getheaders():
+                if key.lower() not in ("transfer-encoding", "connection"):
+                    self.send_header(key, value)
+            self.end_headers()
+
+            while True:
+                chunk = resp.read(4096)
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                self.wfile.flush()
         except urllib.error.HTTPError as e:
             self.send_response(e.code)
             self.end_headers()
             self.wfile.write(e.read())
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def do_DELETE(self):
         req = urllib.request.Request(GO_SERVER_URL, method="DELETE")
