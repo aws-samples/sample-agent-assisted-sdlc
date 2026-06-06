@@ -36,7 +36,7 @@ export class AgentCorePolicyStack extends cdk.Stack {
         service: "bedrock-agentcore-control",
         action: "updateGateway",
         parameters: {
-          gatewayId: gatewayId,
+          gatewayIdentifier: gatewayId,
           policyEngineConfiguration: {
             policyEngineId: this.policyEngineId,
           },
@@ -47,7 +47,7 @@ export class AgentCorePolicyStack extends cdk.Stack {
         service: "bedrock-agentcore-control",
         action: "updateGateway",
         parameters: {
-          gatewayId: gatewayId,
+          gatewayIdentifier: gatewayId,
           policyEngineConfiguration: {
             policyEngineId: this.policyEngineId,
           },
@@ -58,7 +58,7 @@ export class AgentCorePolicyStack extends cdk.Stack {
         service: "bedrock-agentcore-control",
         action: "updateGateway",
         parameters: {
-          gatewayId: gatewayId,
+          gatewayIdentifier: gatewayId,
           policyEngineConfiguration: null,
         },
         ignoreErrorCodesMatching: "ResourceNotFoundException",
