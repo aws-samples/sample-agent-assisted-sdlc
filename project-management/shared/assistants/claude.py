@@ -4,6 +4,7 @@
 """Claude Code assistant strategy."""
 
 import base64
+import uuid
 
 from pipeline import execute_command
 
@@ -83,10 +84,13 @@ class ClaudeStrategy(AssistantStrategy):
             timeout=10,
         )
 
+        claude_session_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, session_id))
+
         return execute_command(
             session_id,
             f"sh -c 'cd /mnt/workplace/gitproject && {otel}"
-            f"claude --continue --dangerously-skip-permissions "
+            f"claude --session-id {claude_session_uuid} --continue "
+            f"--dangerously-skip-permissions "
             f"--plugin-dir /mnt/workplace/gitproject "
             f'-p "$(cat /tmp/prompt.txt)" '
             f'--allowedTools "mcp__gateway__*,Read,Write,Edit,Bash,Task,ToolSearch" < /dev/null 2>&1\'',
