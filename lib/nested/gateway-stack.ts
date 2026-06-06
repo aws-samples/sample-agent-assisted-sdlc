@@ -34,7 +34,6 @@ export class GatewayStack extends cdk.Stack {
     this.gateway = new McpGateway(this, "Gateway", {
       name: `${config.project}-gateway`,
       authorizerType: config.gateway?.authorizerType || "AWS_IAM",
-      enablePolicyEngine: config.gateway?.policyEngine?.enabled ?? false,
     });
 
     this.gatewayId = this.gateway.gatewayId;

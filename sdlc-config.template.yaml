@@ -4,7 +4,7 @@
 project: agent-assisted-sdlc        # Stack name prefix (alphanumeric + hyphens only)
 region: us-west-2
 
-# ─── VPC ──────────────────────────────────────────────────
+# ─── VPC ────────────────────────────────────
 # Creates a new VPC by default.
 # Provide vpcId to bring your own (all BYO fields become required).
 vpc:
@@ -18,7 +18,7 @@ vpc:
   # agentRuntimeSecurityGroupId: sg-111
   # fileSystemSecurityGroupId: sg-222
 
-# ─── Coding Assistant ────────────────────────────────────────────
+# ─── Coding Assistant ───────────────────────────────────
 # The AI agent that reads issues, explores code, and opens pull requests.
 # Each type maps to a runtime container + plugin in coding-assistants/<dir>/
 # Mapping: claude-code → claude-code/, codex → codex/, kiro → kiro/
@@ -32,7 +32,7 @@ codingAssistant:
   maxLifetime: 2400               # Maximum session duration in seconds
   sessionStorageMountPath: /mnt/workplace
 
-# ─── Source Control ──────────────────────────────────────────────
+# ─── Source Control ───────────────────────────────────
 # Platform where code lives. Deploys an MCP server with code operations
 # (branch, push, PR) and provides credentials for cloning.
 # Gateway target name: "source-control" → agent sees mcp__gateway__source-control___*
@@ -51,7 +51,7 @@ sourceControl:
       - "myorg/repo-a"
       - "myorg/repo-b"
 
-# ─── Project Management ───────────────────────────────────────────
+# ─── Project Management ──────────────────────────────────
 # Platform for issue tracking. Deploys an MCP server with issue operations
 # and a connector that triggers the pipeline on events (e.g., label added).
 # Gateway target name: "project-management" → agent sees mcp__gateway__project-management___*
@@ -66,7 +66,7 @@ projectManagement:
     labelPrefix: "agent"          # Prefix for pipeline labels (default: "agent")
                                   # Labels: {prefix}:start, {prefix}:explore, {prefix}:pr-completed, etc.
 
-# ─── Gateway ──────────────────────────────────────────────────
+# ─── Gateway ────────────────────────────────────
 # Controls the AgentCore Gateway and all registered MCP server targets.
 #
 # Default behavior (no url):
@@ -83,9 +83,8 @@ gateway:
   # url: https://my-gateway.gateway.bedrock-agentcore.us-west-2.amazonaws.com/mcp
   # credentialProviderArn: ""     # Required only for CUSTOM_JWT
 
-  # policyEngine:
-  #   enabled: false              # Set true to enforce Cedar policies at gateway level
-  #                               # (branch pattern + label governance enforcement)
+  # AgentCore Cedar policies (branch pattern + label governance enforcement) are
+  # always deployed as the ${project}-agentcore-policy stack.
 
   # Additional developer MCP servers registered as gateway targets.
   # Each entry deploys a container runtime and registers it on the gateway.

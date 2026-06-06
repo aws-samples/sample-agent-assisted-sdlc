@@ -39,12 +39,6 @@ describe("loadConfig", () => {
   test("throws on non-existent file", () => {
     expect(() => loadConfig("/does/not/exist.yaml")).toThrow();
   });
-
-  test("gateway.policyEngine config field is optional", () => {
-    const config = loadConfig(TEMPLATE_PATH);
-    // policyEngine is optional and commented out in template
-    expect(config.gateway?.policyEngine).toBeUndefined();
-  });
 });
 
 describe("getAssistantDir", () => {
