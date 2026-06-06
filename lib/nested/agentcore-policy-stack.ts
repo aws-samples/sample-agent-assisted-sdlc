@@ -47,7 +47,7 @@ export class AgentCorePolicyStack extends cdk.Stack {
           authorizerType: gatewayAuthorizerType,
           policyEngineConfiguration: {
             arn: policyEngineArn,
-            mode: "ENFORCED",
+            mode: "ENFORCE",
           },
         },
         physicalResourceId: cr.PhysicalResourceId.of(`policy-engine-attachment-${gatewayId}`),
@@ -62,7 +62,7 @@ export class AgentCorePolicyStack extends cdk.Stack {
           authorizerType: gatewayAuthorizerType,
           policyEngineConfiguration: {
             arn: policyEngineArn,
-            mode: "ENFORCED",
+            mode: "ENFORCE",
           },
         },
         physicalResourceId: cr.PhysicalResourceId.of(`policy-engine-attachment-${gatewayId}`),
