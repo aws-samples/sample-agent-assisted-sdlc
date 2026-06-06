@@ -27,7 +27,7 @@ export class AgentCorePolicyStack extends cdk.Stack {
     const policyEngine = new cdk.CfnResource(this, "PolicyEngine", {
       type: "AWS::BedrockAgentCore::PolicyEngine",
       properties: {
-        Name: config.project.replace(/-/g, "_") + "_policy_engine",
+        Name: config.project.replace(/-/g, "_") + "_cedar_engine",
       },
     });
     this.policyEngineId = policyEngine.getAtt("PolicyEngineId").toString();
