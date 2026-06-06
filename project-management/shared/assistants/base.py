@@ -344,9 +344,24 @@ class AssistantStrategy(ABC):
             # a. `git ls-remote origin <branch>` lists the remote ref if it exists. Per
             #    resolved decision #6 the probe is exitCode-aware: a non-zero exit means
             #    the probe command itself failed and branch state is unknown.
+            # For private repos, wrap in credential helper (same pattern as fetch).
+            if token is None:
+                lsremote_cmd = f"sh -c 'cd /mnt/workplace/gitproject && git ls-remote origin {branch}'"
+            else:
+                cred = f"https://x-access-token:{token}@github.com"
+                cred_b64 = base64.b64encode(cred.encode()).decode()
+                lsremote_cmd = (
+                    f"sh -c 'echo {cred_b64} | base64 -d > /tmp/.git-creds && "
+                    f'git config --global credential.helper "store --file=/tmp/.git-creds" && '
+                    f"cd /mnt/workplace/gitproject && "
+                    f"git ls-remote origin {branch}; "
+                    f"EXIT=$?; rm -f /tmp/.git-creds; "
+                    f"git config --global --unset credential.helper 2>/dev/null; "
+                    f"exit $EXIT'"
+                )
             lsremote_result = execute_command(
                 session_id,
-                f"sh -c 'cd /mnt/workplace/gitproject && git ls-remote origin {branch}'",
+                lsremote_cmd,
                 timeout=30,
             )
             lsremote_exit = lsremote_result.get("exitCode")
