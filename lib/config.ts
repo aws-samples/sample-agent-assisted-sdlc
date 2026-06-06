@@ -64,9 +64,6 @@ export interface GatewayConfig {
   authorizerType?: string;
   credentialProviderArn?: string;
   developerMcpServers?: McpServerConfig[];
-  policyEngine?: {
-    enabled: boolean;
-  };
 }
 
 export interface ResourcePolicyStatement {
