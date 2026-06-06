@@ -104,7 +104,7 @@ when {
         },
       },
     });
-    branchProtectionPolicy.node.addDependency(policyEngine);
+    branchProtectionPolicy.node.addDependency(updateGateway);
 
     // Policy 2: Branch pattern enforcement (permit only feat/issue-*)
     const branchPatternPolicy = new cdk.CfnResource(this, "BranchPatternPolicy", {
@@ -130,7 +130,7 @@ when {
         },
       },
     });
-    branchPatternPolicy.node.addDependency(policyEngine);
+    branchPatternPolicy.node.addDependency(updateGateway);
 
     // Policy 3: Label governance (forbid {prefix}:start)
     const labelGovernancePolicy = new cdk.CfnResource(this, "LabelGovernancePolicy", {
@@ -153,7 +153,7 @@ when {
         },
       },
     });
-    labelGovernancePolicy.node.addDependency(policyEngine);
+    labelGovernancePolicy.node.addDependency(updateGateway);
 
     // Policy 4: Default permit for authenticated callers
     const defaultPermitPolicy = new cdk.CfnResource(this, "DefaultPermitPolicy", {
@@ -172,7 +172,7 @@ permit(
         },
       },
     });
-    defaultPermitPolicy.node.addDependency(policyEngine);
+    defaultPermitPolicy.node.addDependency(updateGateway);
 
     NagSuppressions.addStackSuppressions(this, [
       { id: "AwsSolutions-IAM5", reason: "UpdateGateway custom resource uses wildcard resources for gateway API calls" },
