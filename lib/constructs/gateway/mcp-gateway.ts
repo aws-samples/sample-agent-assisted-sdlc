@@ -90,7 +90,7 @@ export class McpGateway extends Construct {
         service: "bedrock-agentcore-control",
         action: "deleteGateway",
         parameters: {
-          gatewayId: new cr.PhysicalResourceIdReference(),
+          gatewayIdentifier: new cr.PhysicalResourceIdReference(),
         },
         // Waiter Lambda's Delete handler runs first and deletes the gateway,
         // so this call typically hits an already-deleted gateway. Swallow that.
