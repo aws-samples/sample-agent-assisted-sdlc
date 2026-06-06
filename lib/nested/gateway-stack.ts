@@ -40,7 +40,7 @@ export class GatewayStack extends cdk.Stack {
     const policyEngine = new cdk.CfnResource(this, "PolicyEngine", {
       type: "AWS::BedrockAgentCore::PolicyEngine",
       properties: {
-        Name: sanitizeName(config.project) + "_cedar_v2",
+        Name: sanitizeName(config.project) + "_cedar_v3",
       },
     });
     const policyEngineArn = policyEngine.getAtt("PolicyEngineArn").toString();
