@@ -24,7 +24,16 @@ export class McpGateway extends Construct {
     const stack = cdk.Stack.of(this);
 
     this.gatewayRole = new iam.Role(this, "GatewayRole", {
-      assumedBy: new iam.ServicePrincipal("bedrock-agentcore.amazonaws.com"),
+      assumedBy: new iam.ServicePrincipal("bedrock-agentcore.amazonaws.com", {
+        conditions: {
+          StringEquals: {
+            "aws:SourceAccount": stack.account,
+          },
+          ArnLike: {
+            "aws:SourceArn": `arn:aws:bedrock-agentcore:${stack.region}:${stack.account}:*`,
+          },
+        },
+      }),
     });
 
     // Broad permission so the gateway can invoke any runtime in this account
