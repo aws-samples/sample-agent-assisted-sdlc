@@ -89,7 +89,7 @@ class ClaudeStrategy(AssistantStrategy):
         return execute_command(
             session_id,
             f"sh -c 'cd /mnt/workplace/gitproject && {otel}"
-            f"claude --session-id {claude_session_uuid} --continue "
+            f"claude --session-id {claude_session_uuid} --continue --fork-session "
             f"--dangerously-skip-permissions "
             f"--plugin-dir /mnt/workplace/gitproject "
             f'-p "$(cat /tmp/prompt.txt)" '
