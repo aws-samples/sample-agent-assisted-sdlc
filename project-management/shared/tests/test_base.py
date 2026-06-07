@@ -291,10 +291,12 @@ def _branch_stdout_then_ok(branch: str = "feat/issue-17"):
                                         non-empty ref line so the probe short-circuits
                                         (branch is on origin, no divergence).
       5. rotate                       → return invocation-2
-      6. issue.json write             → return OK
+      6. plugin re-copy               → return OK (issue #47)
+      7. {{LABEL_PREFIX}} sed         → return OK (issue #47)
+      8. issue.json write             → return OK
 
-    For `main` the probe step is skipped entirely (6 calls). For any non-`main`
-    branch the ls-remote probe is inserted between fetch+reset and rotate (7 calls),
+    For `main` the probe step is skipped entirely (8 calls). For any non-`main`
+    branch the ls-remote probe is inserted between fetch+reset and rotate (9 calls),
     and this helper supplies a non-empty stdout so the branch is treated as present
     on origin (resolved decision #5 short-circuit).
     """
@@ -316,6 +318,8 @@ def _branch_stdout_then_ok(branch: str = "feat/issue-17"):
     responses.extend(
         [
             {"exitCode": 0, "stdout": "invocation-2", "stderr": ""},  # rotate
+            {"exitCode": 0, "stdout": "OK", "stderr": ""},  # plugin re-copy (#47)
+            {"exitCode": 0, "stdout": "OK", "stderr": ""},  # LABEL_PREFIX sed (#47)
             {"exitCode": 0, "stdout": "OK", "stderr": ""},  # issue.json
         ]
     )
@@ -342,15 +346,16 @@ class TestRefreshForReinvocation:
         """Public non-`main` path: safe.directory → .git probe → rev-parse → fetch+reset → ls-remote → rotate → issue.json.
 
         Resolved decision #5: a non-`main` branch inserts the ls-remote probe between
-        fetch+reset and rotate, bumping the call count from 6 to 7. The helper returns a
-        non-empty ref so the probe short-circuits (branch present on origin).
+        fetch+reset and rotate. With the issue #47 plugin re-copy + sed added after rotate,
+        the full non-`main` happy path is 9 calls. The helper returns a non-empty ref so the
+        probe short-circuits (branch present on origin).
         """
         mock_exec.side_effect = _branch_stdout_then_ok("feat/issue-17")
 
         self.strategy.refresh_for_reinvocation("session-1", self.issue, token=None)
 
         calls = [c[0][1] for c in mock_exec.call_args_list]
-        assert len(calls) == 7
+        assert len(calls) == 9
 
         # 1. safe.directory
         assert "safe.directory" in calls[0]
@@ -376,9 +381,18 @@ class TestRefreshForReinvocation:
         assert "ln -sfn" in calls[5]
         assert "invocation-" in calls[5]
 
-        # 6. issue.json write
-        assert "issue.json" in calls[6]
-        assert "base64 -d" in calls[6]
+        # 6. plugin re-copy (issue #47) — AFTER rotate, BEFORE issue.json write
+        assert "cp -r skills hooks agents" in calls[6]
+        assert "settings.json start.sh" in calls[6]
+        assert "/mnt/workplace/gitproject/.claude/settings.json" in calls[6]
+
+        # 7. {{LABEL_PREFIX}} sed on freshly-copied skill/agent files (issue #47)
+        assert "LABEL_PREFIX" in calls[7]
+        assert "sed -i" in calls[7]
+
+        # 8. issue.json write
+        assert "issue.json" in calls[8]
+        assert "base64 -d" in calls[8]
 
     @patch("assistants.base.execute_command")
     def test_private_path_uses_credential_helper(self, mock_exec):
@@ -427,6 +441,8 @@ class TestRefreshForReinvocation:
                 "stderr": "auth",
             },  # fetch+reset fails
             {"exitCode": 0, "stdout": "invocation-2", "stderr": ""},  # rotate
+            {"exitCode": 0, "stdout": "OK", "stderr": ""},  # plugin re-copy (#47)
+            {"exitCode": 0, "stdout": "OK", "stderr": ""},  # LABEL_PREFIX sed (#47)
             {"exitCode": 0, "stdout": "OK", "stderr": ""},  # issue.json
         ]
         mock_exec.side_effect = responses
@@ -525,8 +541,89 @@ class TestRefreshForReinvocation:
         self.strategy.refresh_for_reinvocation("session-1", self.issue, token=None)
 
         calls = [c[0][1] for c in mock_exec.call_args_list]
-        assert len(calls) == 6
+        # 8 = original 6 (no ls-remote for main) + plugin re-copy + LABEL_PREFIX sed (#47).
+        assert len(calls) == 8
         assert not any("git ls-remote" in c for c in calls)
+
+    @patch("assistants.base.execute_command")
+    def test_reinvocation_recopies_plugin_and_runs_sed(self, mock_exec):
+        """Issue #47: re-invocation re-copies plugin files and re-renders {{LABEL_PREFIX}}.
+
+        Without this, settings.json (and `codingAssistant.model` in particular) keeps
+        whatever invocation-1 copied for the session's entire life, so a deploy-time
+        model/skill change never reaches an in-flight issue. The re-copy must:
+          * use the SAME copy block as setup_workspace (skills/hooks/agents/...,
+            now including start.sh) and re-copy settings.json to .claude/settings.json,
+          * run AFTER rotate (so the invocation dir exists) and AFTER fetch+reset (so the
+            reset cannot clobber the fresh copies),
+          * re-run the {{LABEL_PREFIX}} sed on the freshly-copied skill/agent files,
+          * NOT target `.` (so `.dev-claude/` is never clobbered).
+        """
+        mock_exec.side_effect = _branch_stdout_then_ok("main")
+
+        self.strategy.refresh_for_reinvocation("session-1", self.issue, token=None)
+
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        recopy_cmd = next(c for c in calls if "cp -r skills hooks agents" in c)
+        sed_cmd = next(c for c in calls if "LABEL_PREFIX" in c and "sed -i" in c)
+
+        # Same plugin file set as setup_workspace, including start.sh (PR #68).
+        assert "settings.json start.sh" in recopy_cmd
+        assert "gateway-iam-proxy" in recopy_cmd
+        assert ".claude-plugin .mcp.json" in recopy_cmd
+        # Model change applies: settings.json copied into .claude/settings.json.
+        assert "/mnt/workplace/gitproject/.claude/settings.json" in recopy_cmd
+        # Scoped to plugin files — never `cp ... .` which would clobber .dev-claude/.
+        assert "gitproject/ 2>/dev/null" in recopy_cmd
+        # sed renders the label placeholder on copied skill/agent markdown: the search
+        # pattern is the {{LABEL_PREFIX}} token, replaced with the default "agent" prefix.
+        assert "s/{{LABEL_PREFIX}}/agent/g" in sed_cmd
+        assert "/mnt/workplace/gitproject/skills" in sed_cmd
+        assert "/mnt/workplace/gitproject/agents" in sed_cmd
+
+        # Ordering: rotate < re-copy < sed < issue.json write.
+        rotate_idx = next(i for i, c in enumerate(calls) if "ln -sfn" in c)
+        recopy_idx = next(i for i, c in enumerate(calls) if "cp -r skills hooks agents" in c)
+        sed_idx = next(
+            i for i, c in enumerate(calls) if "LABEL_PREFIX" in c and "sed -i" in c
+        )
+        issue_idx = next(i for i, c in enumerate(calls) if "issue.json" in c)
+        assert rotate_idx < recopy_idx < sed_idx < issue_idx
+
+    @patch("assistants.base.execute_command")
+    def test_reinvocation_recopy_failure_is_non_fatal(self, mock_exec):
+        """Issue #47: a failed plugin re-copy logs a warning but does NOT raise.
+
+        Unlike setup_workspace (first-invocation copy failure is fatal — the agent has no
+        plugin files at all), a re-copy failure on re-invocation is non-fatal: the prior
+        copy still works and the only cost is continued staleness. The function must
+        proceed to the issue.json refresh and return normally.
+        """
+        responses = [
+            {"exitCode": 0, "stdout": "", "stderr": ""},  # safe.directory
+            {"exitCode": 0, "stdout": "OK\n", "stderr": ""},  # .git probe
+            {"exitCode": 0, "stdout": "main\n", "stderr": ""},  # rev-parse
+            {"exitCode": 0, "stdout": "OK", "stderr": ""},  # fetch + reset
+            {"exitCode": 0, "stdout": "invocation-2", "stderr": ""},  # rotate
+            {
+                "exitCode": 1,
+                "stdout": "",
+                "stderr": "cp: cannot stat",
+            },  # plugin re-copy FAILS (no OK)
+            {"exitCode": 0, "stdout": "OK", "stderr": ""},  # LABEL_PREFIX sed
+            {"exitCode": 0, "stdout": "OK", "stderr": ""},  # issue.json
+        ]
+        mock_exec.side_effect = responses
+
+        # Must not raise despite the re-copy failure.
+        result = self.strategy.refresh_for_reinvocation(
+            "session-1", self.issue, token=None
+        )
+        assert result.get("stdout", "").strip() == "invocation-2"
+
+        calls = [c[0][1] for c in mock_exec.call_args_list]
+        # issue.json refresh still ran after the failed re-copy.
+        assert any("issue.json" in c for c in calls)
 
     @patch("assistants.base.execute_command")
     def test_branch_on_origin_short_circuits(self, mock_exec):
@@ -534,20 +631,22 @@ class TestRefreshForReinvocation:
 
         Resolved decision #5/#6: `exitCode == 0` AND non-empty stdout means the branch
         exists on origin — no divergence, no raise, and no extra `git log` probe. The
-        call sequence is exactly 7 (ls-remote inserted) and execution continues to rotate.
+        call sequence is exactly 9 (ls-remote inserted, plus the issue #47 plugin re-copy
+        + sed after rotate) and execution continues to rotate.
         """
         mock_exec.side_effect = _branch_stdout_then_ok("feat/issue-34")
 
         self.strategy.refresh_for_reinvocation("session-1", self.issue, token=None)
 
         calls = [c[0][1] for c in mock_exec.call_args_list]
-        assert len(calls) == 7
+        assert len(calls) == 9
         # ls-remote ran exactly once and no git-log divergence probe was needed.
         assert sum("git ls-remote origin feat/issue-34" in c for c in calls) == 1
         assert not any("git log" in c for c in calls)
-        # Rotate + issue.json still ran after the short-circuit.
+        # Rotate + plugin re-copy + issue.json still ran after the short-circuit.
         assert "ln -sfn" in calls[5]
-        assert "issue.json" in calls[6]
+        assert "cp -r skills hooks agents" in calls[6]
+        assert "issue.json" in calls[8]
 
     @patch("assistants.base.execute_command")
     def test_probe_nonzero_exit_raises_branch_probe_error(self, mock_exec):
