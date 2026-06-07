@@ -44,14 +44,22 @@ export class PoliciesStack extends cdk.Stack {
     const { config } = props;
     const customPolicies = config.resourcePolicies;
 
-    // 1. Coding Assistant Runtime — only invokable by Lambda roles
+    const assistantActions = [
+      "bedrock-agentcore:InvokeAgentRuntime",
+      // TODO: add when supported in resource policies
+      // "bedrock-agentcore:InvokeAgentRuntimeCommand",
+      // "bedrock-agentcore:InvokeAgentRuntimeCommandShell",
+      "bedrock-agentcore:StopRuntimeSession",
+    ];
+
+    // 1a. Coding Assistant Runtime policy
     const assistantPolicy = buildPolicy(
       props.codingAssistantRuntimeArn,
       [{
         Sid: "AllowLambdaInvoke",
         Effect: "Allow",
         Principal: { AWS: [props.setupLambdaRoleArn, props.pipelineLambdaRoleArn] },
-        Action: "bedrock-agentcore:InvokeAgentRuntime",
+        Action: assistantActions,
         Resource: props.codingAssistantRuntimeArn,
       }],
       customPolicies?.codingAssistant,
@@ -62,6 +70,27 @@ export class PoliciesStack extends cdk.Stack {
       properties: {
         Policy: assistantPolicy,
         ResourceArn: props.codingAssistantRuntimeArn,
+      },
+    });
+
+    // 1b. Coding Assistant Endpoint policy (separate resource ARN)
+    const assistantEndpointArn = `${props.codingAssistantRuntimeArn}/runtime-endpoint/DEFAULT`;
+    const assistantEndpointPolicy = buildPolicy(
+      assistantEndpointArn,
+      [{
+        Sid: "AllowLambdaInvokeEndpoint",
+        Effect: "Allow",
+        Principal: { AWS: [props.setupLambdaRoleArn, props.pipelineLambdaRoleArn] },
+        Action: assistantActions,
+        Resource: assistantEndpointArn,
+      }],
+    );
+
+    new cdk.CfnResource(this, "CodingAssistantEndpointPolicy", {
+      type: "AWS::BedrockAgentCore::ResourcePolicy",
+      properties: {
+        Policy: assistantEndpointPolicy,
+        ResourceArn: assistantEndpointArn,
       },
     });
 
@@ -87,14 +116,23 @@ export class PoliciesStack extends cdk.Stack {
     });
 
     // 3. MCP Server Runtimes — only invokable by gateway role
+    const mcpActions = [
+      "bedrock-agentcore:InvokeAgentRuntime",
+      // TODO: add when supported in resource policies
+      // "bedrock-agentcore:InvokeAgentRuntimeCommand",
+      // "bedrock-agentcore:InvokeAgentRuntimeCommandShell",
+      "bedrock-agentcore:StopRuntimeSession",
+    ];
+
     for (const [i, runtimeArn] of props.mcpServerRuntimeArns.entries()) {
+      // 3a. Runtime policy
       const mcpPolicy = buildPolicy(
         runtimeArn,
         [{
           Sid: "AllowGatewayInvoke",
           Effect: "Allow",
           Principal: { AWS: [props.gatewayRoleArn] },
-          Action: "bedrock-agentcore:InvokeAgentRuntime",
+          Action: mcpActions,
           Resource: runtimeArn,
         }],
         customPolicies?.mcpServers,
@@ -105,6 +143,27 @@ export class PoliciesStack extends cdk.Stack {
         properties: {
           Policy: mcpPolicy,
           ResourceArn: runtimeArn,
+        },
+      });
+
+      // 3b. Endpoint policy
+      const mcpEndpointArn = `${runtimeArn}/runtime-endpoint/DEFAULT`;
+      const mcpEndpointPolicy = buildPolicy(
+        mcpEndpointArn,
+        [{
+          Sid: "AllowGatewayInvokeEndpoint",
+          Effect: "Allow",
+          Principal: { AWS: [props.gatewayRoleArn] },
+          Action: mcpActions,
+          Resource: mcpEndpointArn,
+        }],
+      );
+
+      new cdk.CfnResource(this, `McpServerEndpointPolicy${i}`, {
+        type: "AWS::BedrockAgentCore::ResourcePolicy",
+        properties: {
+          Policy: mcpEndpointPolicy,
+          ResourceArn: mcpEndpointArn,
         },
       });
     }
