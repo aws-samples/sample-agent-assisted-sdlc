@@ -36,4 +36,17 @@ if [ -n "$INPUT_ISSUE" ] && [ "$INPUT_ISSUE" != "$ALLOWED_ISSUE" ]; then
   exit 2
 fi
 
+# Check branch (for push/branch/PR operations)
+BRANCH=$(echo "$TOOL_INPUT" | jq -r '.branch // .ref // .head // empty')
+if [ -n "$BRANCH" ]; then
+  if [[ "$BRANCH" == "main" || "$BRANCH" == "master" ]]; then
+    echo "BLOCKED: cannot target protected branch '$BRANCH'"
+    exit 2
+  fi
+  if [[ "$BRANCH" != "feat/issue-${ALLOWED_ISSUE}" ]]; then
+    echo "BLOCKED: branch '$BRANCH' != allowed 'feat/issue-${ALLOWED_ISSUE}'"
+    exit 2
+  fi
+fi
+
 exit 0

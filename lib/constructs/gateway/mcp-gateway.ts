@@ -45,19 +45,6 @@ export class McpGateway extends Construct {
       ],
     }));
 
-    // Required for Policy Engine evaluation
-    this.gatewayRole.addToPolicy(new iam.PolicyStatement({
-      actions: [
-        "bedrock-agentcore:AuthorizeAction",
-        "bedrock-agentcore:PartiallyAuthorizeActions",
-        "bedrock-agentcore:GetPolicyEngine",
-      ],
-      resources: [
-        `arn:aws:bedrock-agentcore:${stack.region}:${stack.account}:policy-engine/*`,
-        `arn:aws:bedrock-agentcore:${stack.region}:${stack.account}:gateway/*`,
-      ],
-    }));
-
     const createGateway = new cr.AwsCustomResource(this, "CreateGateway", {
       installLatestAwsSdk: true,
       onCreate: {
@@ -82,11 +69,6 @@ export class McpGateway extends Construct {
         },
         physicalResourceId: cr.PhysicalResourceId.fromResponse("gatewayId"),
       },
-      // No-op refresh on stack updates — re-fetches gatewayId so dependents
-      // (WaitForReady, Target*) can resolve getResponseField("gatewayId"). Without
-      // this, AwsCustomResource falls back to onCreate on Update, which throws
-      // ResourceConflictException on the existing gateway and leaves the
-      // response empty.
       onUpdate: {
         service: "bedrock-agentcore-control",
         action: "getGateway",
@@ -101,11 +83,6 @@ export class McpGateway extends Construct {
         parameters: {
           gatewayIdentifier: new cr.PhysicalResourceIdReference(),
         },
-        // Waiter Lambda's Delete handler runs first and deletes the gateway,
-        // so this call typically hits an already-deleted gateway. Swallow that.
-        // ValidationException covers rollback cases where targets still exist
-        // (waiter handles target cleanup; this fallback runs only if waiter
-        // never deployed, in which case the orphaned gateway is the bigger fix).
         ignoreErrorCodesMatching: "ResourceNotFoundException|ValidationException",
       },
       policy: cr.AwsCustomResourcePolicy.fromStatements([

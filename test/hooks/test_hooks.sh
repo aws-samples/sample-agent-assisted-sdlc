@@ -31,6 +31,32 @@ run_test() {
 }
 
 
+echo "=== Label Governance Tests ==="
+
+run_test "allow agent:explore" "label-governance.sh" \
+  '{"tool_input":{"labels":["agent:explore"]}}' 0
+
+run_test "block agent:start (default prefix)" "label-governance.sh" \
+  '{"tool_input":{"labels":["agent:start"]}}' 2
+
+run_test "allow other labels" "label-governance.sh" \
+  '{"tool_input":{"labels":["agent:implement","agent:pr-completed"]}}' 0
+
+run_test "allow empty labels" "label-governance.sh" \
+  '{"tool_input":{"labels":[]}}' 0
+
+run_test "allow no labels field" "label-governance.sh" \
+  '{"tool_input":{}}' 0
+
+run_test "block custom:start with SDLC_LABEL_PREFIX=custom" "label-governance.sh" \
+  '{"tool_input":{"labels":["custom:start"]}}' 2 \
+  "SDLC_LABEL_PREFIX=custom"
+
+run_test "allow agent:start when prefix is custom" "label-governance.sh" \
+  '{"tool_input":{"labels":["agent:start"]}}' 0 \
+  "SDLC_LABEL_PREFIX=custom"
+
+echo ""
 echo "=== Bash Guard Tests ==="
 
 run_test "block rm -rf /" "bash-guard.sh" \
@@ -157,6 +183,12 @@ run_scope_test "block wrong owner" \
 
 run_scope_test "block wrong repo" \
   '{"tool_name":"mcp__gateway__source-control___push_files","tool_input":{"owner":"myorg","repo":"wrong","branch":"feat/issue-42"}}' 2
+
+run_scope_test "block push to main" \
+  '{"tool_name":"mcp__gateway__source-control___push_files","tool_input":{"owner":"myorg","repo":"myrepo","branch":"main"}}' 2
+
+run_scope_test "block push to master" \
+  '{"tool_name":"mcp__gateway__source-control___push_files","tool_input":{"owner":"myorg","repo":"myrepo","branch":"master"}}' 2
 
 run_scope_test "allow correct issue comment" \
   '{"tool_name":"mcp__gateway__project-management___add_issue_comment","tool_input":{"owner":"myorg","repo":"myrepo","issue_number":42}}' 0
