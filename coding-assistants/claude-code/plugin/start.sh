@@ -13,22 +13,25 @@ cd /mnt/workplace/gitproject
 
 if [ "$1" = "--resume" ]; then
   # Resume the pipeline's conversation
-  SESSION_ID=$(cat .dev-claude/project.json 2>/dev/null | python3 -c "
-import json, sys, uuid
-try:
-    d = json.load(sys.stdin)
-    owner = d.get('owner','')
-    repo = d.get('repo','')
-    issue = d.get('issue_number', 0)
-    sid = f'sdlc-{owner}-{repo}-issue-{issue:05d}-run'.ljust(33,'0')
-    print(uuid.uuid5(uuid.NAMESPACE_DNS, sid))
-except:
-    pass
+  PROJECT_FILE="/mnt/workplace/gitproject/.dev-claude/project.json"
+  if [ ! -f "$PROJECT_FILE" ]; then
+    echo "Error: $PROJECT_FILE not found. No session to resume."
+    exit 1
+  fi
+  SESSION_ID=$(python3 -c "
+import json, uuid
+d = json.load(open('$PROJECT_FILE'))
+owner = d.get('owner','')
+repo = d.get('repo','')
+issue = d.get('issue_number', 0)
+sid = f'sdlc-{owner}-{repo}-issue-{issue:05d}-run'.ljust(33,'0')
+print(uuid.uuid5(uuid.NAMESPACE_DNS, sid))
 " 2>/dev/null)
   if [ -n "$SESSION_ID" ]; then
-    exec claude --session-id "$SESSION_ID" --resume --plugin-dir /mnt/workplace/gitproject
+    exec claude --resume "$SESSION_ID" --plugin-dir /mnt/workplace/gitproject
   else
-    exec claude --resume --plugin-dir /mnt/workplace/gitproject
+    echo "Error: could not derive session ID from $PROJECT_FILE"
+    exit 1
   fi
 else
   # Fresh interactive session

@@ -76,9 +76,26 @@ def execute_command(
         )
         resp.raise_for_status()
     except requests.RequestException as e:
+        logger.error(
+            "execute_command_failed",
+            extra={
+                "session_id": session_id,
+                "blocking": blocking,
+                "command_head": command[:120],
+                "error": str(e),
+            },
+        )
         raise RuntimeCommandError("AgentCore execute_command HTTP failure") from e
 
     if not blocking:
+        logger.info(
+            "command_dispatched",
+            extra={
+                "session_id": session_id,
+                "http_status": resp.status_code,
+                "command_head": command[:120],
+            },
+        )
         resp.close()
         return {"stdout": "", "stderr": "", "exitCode": 0, "status": "STARTED"}
 
