@@ -10,6 +10,7 @@ import { Construct } from "constructs";
 
 import { CodingAssistant } from "../constructs/runtime/coding-assistant";
 import { S3FilesStorage } from "../constructs/storage/s3-files";
+import { SessionsTable } from "../constructs/storage/sessions-table";
 import { SdlcConfig, getAssistantDir } from "../config";
 
 const DEFAULT_MODEL = "global.anthropic.claude-opus-4-7";
@@ -43,6 +44,11 @@ export class AssistantStack extends cdk.Stack {
       pluginsPath: `./coding-assistants/${getAssistantDir(config)}/plugin`,
       gatewayProxyPath: isByoGateway ? undefined : "./gateway/gateway-iam-proxy",
       region: config.region,
+    });
+
+    // DynamoDB sessions table for observability
+    const sessionsTable = new SessionsTable(this, "SessionsTable", {
+      project: config.project,
     });
 
     // Coding Assistant Runtime (depends on storage for mount targets to be available).
@@ -204,6 +210,7 @@ export class AssistantStack extends cdk.Stack {
         ALLOWED_USERS: JSON.stringify(config.projectManagement.github?.allowedUsers || []),
         ALLOWED_REPOS: JSON.stringify(config.sourceControl.github?.allowedRepos || []),
         SDLC_LABEL_PREFIX: config.projectManagement.github?.labelPrefix || "agent",
+        SESSIONS_TABLE_NAME: sessionsTable.table.tableName,
         ...(config.sourceControl.github?.privateRepo && {
           GITHUB_APP_CLIENT_ID: config.sourceControl.github.appClientId,
           GITHUB_INSTALLATION_ID: config.sourceControl.github.installationId,
@@ -231,6 +238,9 @@ export class AssistantStack extends cdk.Stack {
         resources: [props.privateKeySecretArn],
       }));
     }
+
+    // Grant DynamoDB access for session tracking
+    sessionsTable.table.grantReadWriteData(setupLambda);
 
     const pipelineLambda = new cdk.aws_lambda.Function(this, "PipelineLambda", {
       runtime: cdk.aws_lambda.Runtime.PYTHON_3_12,
@@ -304,6 +314,10 @@ export class AssistantStack extends cdk.Stack {
       new cdk.CfnOutput(this, "StateMachineArn", { value: stateMachine.stateMachineArn });
       new cdk.CfnOutput(this, "GitHubActionsRoleArn", { value: ghActionsRole.roleArn });
     }
+
+    // Outputs for session tracking
+    new cdk.CfnOutput(this, "SessionsTableName", { value: sessionsTable.table.tableName });
+    new cdk.CfnOutput(this, "SessionsTableArn", { value: sessionsTable.table.tableArn });
 
     NagSuppressions.addStackSuppressions(this, [
       { id: "AwsSolutions-IAM5", reason: "Lambda and custom resources use CDK-managed wildcard policies" },
