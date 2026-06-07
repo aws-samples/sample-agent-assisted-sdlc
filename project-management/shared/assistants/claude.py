@@ -86,10 +86,15 @@ class ClaudeStrategy(AssistantStrategy):
 
         claude_session_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, session_id))
 
+        if is_reinvocation:
+            session_flag = f"--resume {claude_session_uuid}"
+        else:
+            session_flag = f"--session-id {claude_session_uuid}"
+
         return execute_command(
             session_id,
             f"sh -c 'cd /mnt/workplace/gitproject && {otel}"
-            f"claude --session-id {claude_session_uuid} --continue --fork-session "
+            f"claude {session_flag} "
             f"--dangerously-skip-permissions "
             f"--plugin-dir /mnt/workplace/gitproject "
             f'-p "$(cat /tmp/prompt.txt)" '
