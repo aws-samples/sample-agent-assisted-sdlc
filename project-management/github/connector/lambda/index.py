@@ -18,6 +18,7 @@ Environment variables:
 
 import json
 import os
+import uuid
 
 from assistants import STRATEGIES
 from github_token import get_token
@@ -129,6 +130,27 @@ def handler(event, context):
             "session_id": session_id,
         },
     )
+
+    # Write session record to DynamoDB (non-blocking: log and continue on failure)
+    try:
+        import sessions
+        claude_session_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, session_id))
+        sessions.write_session_record(
+            table_name=os.environ.get("SESSIONS_TABLE_NAME", ""),
+            session_id=session_id,
+            runtime_arn=strategy.runtime_arn,
+            assistant_type=assistant_type,
+            repo_owner=repo_owner,
+            repo_name=repo_name,
+            issue_number=issue_number,
+            issue_title=event.get("issue_title", ""),
+            triggered_by=triggered_by if triggered_by else "unknown",
+            is_reinvocation=is_reinvocation,
+            claude_session_uuid=claude_session_uuid,
+        )
+        logger.info("session_record_written", extra={"session_id": session_id})
+    except Exception:
+        logger.exception("session_write_failed", extra={"session_id": session_id})
 
     if is_reinvocation:
         # Re-invocation: fetch latest commits, refresh issue.json, rotate invocation dir.
