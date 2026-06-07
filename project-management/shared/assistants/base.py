@@ -262,11 +262,18 @@ class AssistantStrategy(ABC):
                     no extra commits" from AgentCore dropped `ls-remote` output (issue #37), so
                     `BranchProbeError` (fail-closed per decision #6).
              Fail-closed — a push of a stale local-only branch is impossible past this gate.
-          6. Existing rotation + `issue.json` refresh.
+          6. Existing rotation.
+          7. Re-copy plugin files from `/mnt/plugins` + render `{{LABEL_PREFIX}}` (issue #47),
+             so deploy-time config/skill changes (notably `codingAssistant.model` via
+             `settings.json`) apply to in-flight sessions on re-invocation. Runs AFTER the
+             reset (step 4) so the reset cannot clobber the fresh copies, and AFTER the
+             fail-closed branch probe (step 5). Then `issue.json` refresh.
 
-        Untracked files (`.dev-claude/`, `hooks/`, `skills/`, `.claude-plugin/`, `.mcp.json`,
-        `settings.json`, `gateway-iam-proxy/`) survive `git reset --hard` provided they remain
-        untracked (i.e. listed in `.gitignore`).
+        Untracked files (`.dev-claude/`, `hooks/`, `skills/`, `agents/`, `.claude-plugin/`,
+        `.mcp.json`, `settings.json`, `start.sh`, `gateway-iam-proxy/`) survive `git reset
+        --hard` provided they remain untracked (i.e. listed in `.gitignore`). As of issue #47
+        the plugin files are additionally re-copied each re-invocation (step 7) rather than
+        merely surviving the reset, so config/skill changes propagate.
         """
         # 1. Silence "dubious ownership" — runtime workspace is owned by root but git runs as
         #    a non-root uid in some container configurations. Idempotent, hardcoded path.
@@ -462,6 +469,62 @@ class AssistantStrategy(ABC):
             "invocation_rotated",
             extra={"target": rotate_result.get("stdout", "").strip()},
         )
+
+        # 7. Re-copy plugin files from /mnt/plugins so deploy-time config/skill changes
+        #    apply to in-flight sessions on re-invocation (issue #47). Without this,
+        #    settings.json — and `codingAssistant.model` in particular — keeps whatever
+        #    invocation-1 copied for the session's entire life: a model bump applies only
+        #    to sessions whose FIRST invocation is after the redeploy. This mirrors the
+        #    setup_workspace copy block (it is short and stable; duplication over a shared
+        #    helper is the documented convention).
+        #
+        #    Placement: AFTER `git reset --hard` (step 4) so the reset cannot clobber the
+        #    fresh copies, and AFTER rotate (step 6) so the fail-closed branch probe
+        #    (step 5) has already had its chance to abort — no point refreshing plugins on
+        #    a re-invocation that must not push. The cp targets specific plugin dirs/files,
+        #    never `.`, so `.dev-claude/` (issue.json, invocation dirs) is untouched.
+        #
+        #    Trade-off (documented per the issue): this means a mid-flight model/skill
+        #    change DOES switch behavior between invocations of the same issue (e.g. explore
+        #    on 4-7, implement on 4-8). For model that is benign; for skills it means a
+        #    re-invocation may run newer skill prompts than the invocation that created the
+        #    branch. Accepted.
+        #
+        #    Unlike setup_workspace (where a first-invocation copy failure is fatal because
+        #    the agent has no plugin files at all), a re-copy failure here is non-fatal: the
+        #    prior copy still works and the only cost is continued staleness. Log, don't raise.
+        recopy_result = execute_command(
+            session_id,
+            f"sh -c 'mkdir -p /mnt/workplace/gitproject/.claude && "
+            f"cd {self.plugin_path} && "
+            f"cp -r skills hooks agents gateway-iam-proxy settings.json start.sh "
+            f"/mnt/workplace/gitproject/ 2>/dev/null; "
+            f"cp -r .claude-plugin .mcp.json /mnt/workplace/gitproject/ 2>/dev/null; "
+            f"cp /mnt/workplace/gitproject/settings.json /mnt/workplace/gitproject/.claude/settings.json && "
+            f"chmod +x /mnt/workplace/gitproject/hooks/*.sh && echo OK'",
+        )
+        if "OK" in recopy_result.get("stdout", ""):
+            logger.info("plugin_recopy_complete")
+        else:
+            logger.warning(
+                "plugin_recopy_incomplete",
+                extra={
+                    "stdout": recopy_result.get("stdout", ""),
+                    "stderr": recopy_result.get("stderr", ""),
+                },
+            )
+
+        # Render {{LABEL_PREFIX}} in the freshly-copied skill/agent files (same sed as
+        # setup_workspace) — otherwise a re-copy would leave the literal placeholder behind.
+        label_prefix = os.environ.get("SDLC_LABEL_PREFIX", "agent")
+        execute_command(
+            session_id,
+            f"sh -c 'find /mnt/workplace/gitproject/skills /mnt/workplace/gitproject/agents "
+            f'-name "*.md" -exec sed -i '
+            f'"s/{{{{LABEL_PREFIX}}}}/{label_prefix}/g" {{}} + 2>/dev/null; echo OK\'',
+            timeout=10,
+        )
+        logger.info("label_prefix_rendered")
 
         # Refresh issue.json with latest event data (includes new comments).
         # Chunked write — issue.json grows past AgentCore's per-command size
