@@ -1,8 +1,5 @@
 import * as cdk from "aws-cdk-lib";
 import * as ec2 from "aws-cdk-lib/aws-ec2";
-import * as iam from "aws-cdk-lib/aws-iam";
-import * as lambda from "aws-cdk-lib/aws-lambda";
-import * as cr from "aws-cdk-lib/custom-resources";
 import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
@@ -67,113 +64,13 @@ export class GatewayStack extends cdk.Stack {
       });
     }
 
-    // 4. Inline Lambda: attach PolicyEngine to gateway + wait for READY
-    const attachFnRole = new iam.Role(this, "AttachEngineFnRole", {
-      assumedBy: new iam.ServicePrincipal("lambda.amazonaws.com"),
-      managedPolicies: [iam.ManagedPolicy.fromAwsManagedPolicyName("service-role/AWSLambdaBasicExecutionRole")],
-    });
-    attachFnRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["bedrock-agentcore:UpdateGateway", "bedrock-agentcore:GetGateway"],
-      resources: ["*"],
-    }));
-    attachFnRole.addToPolicy(new iam.PolicyStatement({
-      actions: ["iam:PassRole"],
-      resources: [this.gateway.gatewayRole.roleArn],
-    }));
+    // Gateway-to-PolicyEngine attachment is done manually post-deploy via:
+    //   aws bedrock-agentcore-control update-gateway --gateway-identifier <id> \
+    //     --name <name> --role-arn <arn> --authorizer-type AWS_IAM \
+    //     --policy-engine-configuration '{"arn":"<engine-arn>","mode":"ENFORCE"}'
 
-    const attachFn = new lambda.Function(this, "AttachEngineFn", {
-      runtime: lambda.Runtime.PYTHON_3_12,
-      handler: "index.handler",
-      timeout: cdk.Duration.minutes(5),
-      role: attachFnRole,
-      code: lambda.Code.fromInline(`
-import json, os, time, urllib.request
 
-def send_response(event, context, status, data=None, reason=None):
-    body = json.dumps({
-        "Status": status,
-        "Reason": reason or f"See CloudWatch: {context.log_stream_name}",
-        "PhysicalResourceId": event.get("PhysicalResourceId", context.log_stream_name),
-        "StackId": event["StackId"],
-        "RequestId": event["RequestId"],
-        "LogicalResourceId": event["LogicalResourceId"],
-        "Data": data or {},
-    }).encode()
-    req = urllib.request.Request(event["ResponseURL"], data=body, method="PUT")
-    req.add_header("Content-Type", "")
-    urllib.request.urlopen(req)
-
-def signed_request(method, url, body=None):
-    """Make a SigV4-signed HTTP request to AgentCore control plane."""
-    import botocore.session
-    from botocore.auth import SigV4Auth
-    from botocore.awsrequest import AWSRequest
-    session = botocore.session.get_session()
-    creds = session.get_credentials().get_frozen_credentials()
-    headers = {"Content-Type": "application/json"}
-    req = AWSRequest(method=method, url=url, data=body, headers=headers)
-    SigV4Auth(creds, "bedrock-agentcore", session.get_config_variable("region") or "us-west-2").add_auth(req)
-    http_req = urllib.request.Request(url, data=body.encode() if body else None, method=method)
-    for k, v in dict(req.headers).items():
-        http_req.add_header(k, v)
-    resp = urllib.request.urlopen(http_req)
-    return json.loads(resp.read())
-
-def handler(event, context):
-    print(json.dumps(event))
-    props = event["ResourceProperties"]
-    request_type = event["RequestType"]
-    region = os.environ.get("AWS_REGION", "us-west-2")
-    base = f"https://bedrock-agentcore-control.{region}.amazonaws.com"
-    gw_id = props["GatewayId"]
-    try:
-        if request_type in ("Create", "Update"):
-            body = json.dumps({
-                "name": props["GatewayName"],
-                "roleArn": props["GatewayRoleArn"],
-                "authorizerType": props["AuthorizerType"],
-                "policyEngineConfiguration": {"arn": props["PolicyEngineArn"], "mode": "ENFORCE"},
-            })
-            signed_request("PUT", f"{base}/gateways/{gw_id}/", body)
-            for _ in range(30):
-                time.sleep(10)
-                resp = signed_request("GET", f"{base}/gateways/{gw_id}/")
-                print(f"Gateway status: {resp.get('status')}")
-                if resp.get("status") == "READY":
-                    send_response(event, context, "SUCCESS")
-                    return
-            print("WARNING: Gateway not READY in 5 min, proceeding anyway")
-            send_response(event, context, "SUCCESS")
-        elif request_type == "Delete":
-            try:
-                body = json.dumps({
-                    "name": props["GatewayName"],
-                    "roleArn": props["GatewayRoleArn"],
-                    "authorizerType": props["AuthorizerType"],
-                })
-                signed_request("PUT", f"{base}/gateways/{gw_id}/", body)
-            except Exception as e:
-                print(f"Detach failed (non-fatal): {e}")
-            send_response(event, context, "SUCCESS")
-    except Exception as e:
-        print(f"WARNING: Policy engine attachment failed (non-fatal): {e}")
-        send_response(event, context, "SUCCESS")
-`),
-    });
-
-    const attachPolicyEngine = new cdk.CustomResource(this, "AttachPolicyEngine", {
-      serviceToken: attachFn.functionArn,
-      properties: {
-        GatewayId: this.gateway.gatewayId,
-        GatewayName: `${config.project}-gateway`,
-        GatewayRoleArn: this.gateway.gatewayRole.roleArn,
-        AuthorizerType: config.gateway?.authorizerType || "AWS_IAM",
-        PolicyEngineArn: policyEngineArn,
-      },
-    });
-    attachPolicyEngine.node.addDependency(policyEngine);
-
-    // 6. Cedar policies (depend on gateway being READY with engine attached)
+    // 6. Cedar policies (created without gateway attachment — attach manually post-deploy)
     const gatewayArn = this.gateway.gatewayArn;
     const labelPrefix = config.projectManagement.github?.labelPrefix || "agent";
     const projectPrefix = sanitizeName(config.project);
@@ -188,7 +85,7 @@ def handler(event, context):
         },
       },
     });
-    branchProtectionPolicy.node.addDependency(attachPolicyEngine);
+    branchProtectionPolicy.node.addDependency(policyEngine);
 
     const branchPatternPolicy = new cdk.CfnResource(this, "BranchPatternPolicy", {
       type: "AWS::BedrockAgentCore::Policy",
@@ -200,7 +97,7 @@ def handler(event, context):
         },
       },
     });
-    branchPatternPolicy.node.addDependency(attachPolicyEngine);
+    branchPatternPolicy.node.addDependency(policyEngine);
 
     const labelGovernancePolicy = new cdk.CfnResource(this, "LabelGovernancePolicy", {
       type: "AWS::BedrockAgentCore::Policy",
@@ -212,7 +109,7 @@ def handler(event, context):
         },
       },
     });
-    labelGovernancePolicy.node.addDependency(attachPolicyEngine);
+    labelGovernancePolicy.node.addDependency(policyEngine);
 
     const defaultPermitPolicy = new cdk.CfnResource(this, "DefaultPermitPolicy", {
       type: "AWS::BedrockAgentCore::Policy",
@@ -224,7 +121,7 @@ def handler(event, context):
         },
       },
     });
-    defaultPermitPolicy.node.addDependency(attachPolicyEngine);
+    defaultPermitPolicy.node.addDependency(policyEngine);
 
     NagSuppressions.addStackSuppressions(this, [
       { id: "AwsSolutions-IAM5", reason: "Gateway and custom resource policies use CDK-managed wildcard resources" },
