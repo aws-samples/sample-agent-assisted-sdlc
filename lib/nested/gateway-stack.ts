@@ -4,6 +4,7 @@ import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
 import { McpGateway } from "../constructs/gateway/mcp-gateway";
+import { RuntimeObservability } from "../constructs/observability/runtime-observability";
 import { SdlcConfig } from "../config";
 import { buildRuntimeEndpoint, registerGatewayTarget } from "../utils";
 
@@ -48,6 +49,14 @@ export class GatewayStack extends cdk.Stack {
 
     this.gatewayId = this.gateway.gatewayId;
     this.gatewayUrl = this.gateway.gatewayUrl;
+
+    // Observability (APPLICATION_LOGS, TRACES, Identity logs)
+    new RuntimeObservability(this, "Observability", {
+      runtimeArn: this.gateway.gatewayArn,
+      runtimeId: this.gateway.gatewayId,
+      resourceType: "gateway",
+      logRetentionDays: 30,
+    });
 
     // Register all MCP server targets on the gateway
     for (const target of targets) {

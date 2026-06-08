@@ -29,23 +29,36 @@ export interface RuntimeObservabilityProps {
    * @default true
    */
   enableIdentityLogs?: boolean;
+
+  /**
+   * Type of AgentCore resource for observability configuration.
+   * @default "runtime"
+   */
+  resourceType?: "runtime" | "gateway";
 }
 
 /**
- * Reusable construct for AgentCore runtime observability delivery.
+ * Reusable construct for AgentCore runtime and gateway observability delivery.
  *
- * Sets up four log delivery pipelines:
+ * For runtime resources, sets up four log delivery pipelines:
  *   Runtime tab:
  *     1. APPLICATION_LOGS → CloudWatch Logs
  *     2. USAGE_LOGS → CloudWatch Logs
  *     3. TRACES → X-Ray (custom resource, CFN doesn't support XRAY destination)
  *   Identity tab:
  *     4. APPLICATION_LOGS (workload-identity-directory) → CloudWatch Logs
+ *
+ * For gateway resources, sets up three log delivery pipelines (no USAGE_LOGS):
+ *   Gateway tab:
+ *     1. APPLICATION_LOGS → CloudWatch Logs
+ *     2. TRACES → X-Ray
+ *   Identity tab:
+ *     3. APPLICATION_LOGS (workload-identity-directory) → CloudWatch Logs
  */
 export class RuntimeObservability extends Construct {
   public readonly appLogGroupName: string;
-  public readonly usageLogGroupName: string;
-  public readonly identityLogGroupName: string;
+  public readonly usageLogGroupName?: string;
+  public readonly identityLogGroupName?: string;
 
   constructor(scope: Construct, id: string, props: RuntimeObservabilityProps) {
     super(scope, id);
@@ -54,15 +67,16 @@ export class RuntimeObservability extends Construct {
     const retentionDays = props.logRetentionDays ?? 30;
     const shortId = props.runtimeId.substring(0, 49);
     const enableIdentity = props.enableIdentityLogs ?? true;
+    const resourceType = props.resourceType ?? "runtime";
 
     // -------------------------------------------------------------------
-    // 1. RUNTIME — APPLICATION_LOGS
+    // 1. RUNTIME/GATEWAY — APPLICATION_LOGS
     // -------------------------------------------------------------------
 
     const appLogGroup = new cdk.CfnResource(this, "ApplicationLogGroup", {
       type: "AWS::Logs::LogGroup",
       properties: {
-        LogGroupName: `/aws/vendedlogs/bedrock-agentcore/runtime/APPLICATION_LOGS/${props.runtimeId}`,
+        LogGroupName: `/aws/vendedlogs/bedrock-agentcore/${resourceType}/APPLICATION_LOGS/${props.runtimeId}`,
         RetentionInDays: retentionDays,
         LogGroupClass: "STANDARD",
       },
@@ -98,49 +112,51 @@ export class RuntimeObservability extends Construct {
     appDelivery.addDependency(appDest);
 
     // -------------------------------------------------------------------
-    // 2. RUNTIME — USAGE_LOGS
+    // 2. RUNTIME — USAGE_LOGS (only for runtime resources, not gateway)
     // -------------------------------------------------------------------
 
-    const usageLogGroup = new cdk.CfnResource(this, "UsageLogGroup", {
-      type: "AWS::Logs::LogGroup",
-      properties: {
-        LogGroupName: `/aws/vendedlogs/bedrock-agentcore/runtime/USAGE_LOGS/${props.runtimeId}`,
-        RetentionInDays: retentionDays,
-        LogGroupClass: "STANDARD",
-      },
-    });
-    this.usageLogGroupName = usageLogGroup.ref;
+    if (resourceType === "runtime") {
+      const usageLogGroup = new cdk.CfnResource(this, "UsageLogGroup", {
+        type: "AWS::Logs::LogGroup",
+        properties: {
+          LogGroupName: `/aws/vendedlogs/bedrock-agentcore/runtime/USAGE_LOGS/${props.runtimeId}`,
+          RetentionInDays: retentionDays,
+          LogGroupClass: "STANDARD",
+        },
+      });
+      this.usageLogGroupName = usageLogGroup.ref;
 
-    const usageSource = new cdk.CfnResource(this, "UsageSource", {
-      type: "AWS::Logs::DeliverySource",
-      properties: {
-        Name: `${shortId}-usg-src`,
-        LogType: "USAGE_LOGS",
-        ResourceArn: props.runtimeArn,
-      },
-    });
+      const usageSource = new cdk.CfnResource(this, "UsageSource", {
+        type: "AWS::Logs::DeliverySource",
+        properties: {
+          Name: `${shortId}-usg-src`,
+          LogType: "USAGE_LOGS",
+          ResourceArn: props.runtimeArn,
+        },
+      });
 
-    const usageDest = new cdk.CfnResource(this, "UsageDestination", {
-      type: "AWS::Logs::DeliveryDestination",
-      properties: {
-        Name: `${shortId}-usg-dst`,
-        DeliveryDestinationType: "CWL",
-        DestinationResourceArn: usageLogGroup.getAtt("Arn").toString(),
-      },
-    });
+      const usageDest = new cdk.CfnResource(this, "UsageDestination", {
+        type: "AWS::Logs::DeliveryDestination",
+        properties: {
+          Name: `${shortId}-usg-dst`,
+          DeliveryDestinationType: "CWL",
+          DestinationResourceArn: usageLogGroup.getAtt("Arn").toString(),
+        },
+      });
 
-    const usageDelivery = new cdk.CfnResource(this, "UsageDelivery", {
-      type: "AWS::Logs::Delivery",
-      properties: {
-        DeliverySourceName: usageSource.ref,
-        DeliveryDestinationArn: usageDest.getAtt("Arn").toString(),
-      },
-    });
-    usageDelivery.addDependency(usageSource);
-    usageDelivery.addDependency(usageDest);
+      const usageDelivery = new cdk.CfnResource(this, "UsageDelivery", {
+        type: "AWS::Logs::Delivery",
+        properties: {
+          DeliverySourceName: usageSource.ref,
+          DeliveryDestinationArn: usageDest.getAtt("Arn").toString(),
+        },
+      });
+      usageDelivery.addDependency(usageSource);
+      usageDelivery.addDependency(usageDest);
+    }
 
     // -------------------------------------------------------------------
-    // 3. RUNTIME — X-RAY TRACES (Custom Resource)
+    // 3. RUNTIME/GATEWAY — X-RAY TRACES (Custom Resource)
     // -------------------------------------------------------------------
 
     const xrayDeliveryHandler = new lambda.Function(this, "XRayDeliveryHandler", {
