@@ -18,6 +18,7 @@ Environment variables:
 
 import json
 import os
+import uuid
 
 from assistants import STRATEGIES
 from github_token import get_token
@@ -94,24 +95,34 @@ def handler(event, context):
         },
     )
 
-    # Refresh the AgentCore session's maxLifetime budget by stopping any
-    # existing microVM. The session ID stays valid; the next execute_command
-    # spins up a fresh microVM with a full 40-minute lifetime ahead of it.
-    # Persistent state on /mnt/workplace/ (including CLAUDE_CONFIG_DIR at
-    # /mnt/workplace/.claude-data) survives the stop. Best-effort: log and
-    # continue on failure since the next execute_command would re-spawn the
-    # microVM regardless. First-invocation runs (no microVM yet) typically
-    # succeed silently or return a benign no-op error from AgentCore.
+    claude_session_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, session_id))
+
+    # Check if Claude is already running BEFORE stopping the session.
+    # If Claude is active, we skip the entire invocation (no stop, no re-setup).
+    # The probe runs against the existing microVM — if no microVM exists (first
+    # invocation), the probe command spawns one but won't find claude running.
+    claude_already_running = False
+    probe_cmd = (
+        f'sh -c \'for p in $(ls /proc/ 2>/dev/null | grep -E "^[0-9]+$"); do '
+        f"[ -r /proc/$p/cmdline ] || continue; "
+        f'cmd=$(tr "\\0" " " < /proc/$p/cmdline); '
+        f'case "$cmd" in sh*|bash*) continue ;; *claude*{claude_session_uuid}*) echo RUNNING; exit 0 ;; esac; '
+        f"done; echo NOT_RUNNING'"
+    )
     try:
-        stop_runtime_session(session_id)
-        logger.info("session_stopped", extra={"session_id": session_id})
+        probe_result = execute_command(session_id, probe_cmd, timeout=10)
+        if "RUNNING" in probe_result.get("stdout", ""):
+            claude_already_running = True
+            logger.info(
+                "claude_already_running",
+                extra={
+                    "session_id": session_id,
+                    "claude_session_uuid": claude_session_uuid,
+                },
+            )
     except Exception:
-        # Common case on first invocation: no microVM exists yet, AgentCore
-        # may return 404/400. Not fatal — proceed and let execute_command
-        # spin up the new microVM.
         logger.exception(
-            "stop_runtime_session_non_fatal",
-            extra={"session_id": session_id},
+            "claude_running_check_failed", extra={"session_id": session_id}
         )
 
     # Detect re-invocation: check if invocation-1/ already exists in this session
@@ -120,7 +131,6 @@ def handler(event, context):
         "sh -c 'test -d /mnt/workplace/gitproject/.dev-claude/invocation-1 && echo REINVOKE || echo FIRST'",
         timeout=10,
     )
-    # stdout may be empty due to API event format — fall back to FIRST
     is_reinvocation = "REINVOKE" in check.get("stdout", "")
     logger.info(
         "invocation_mode_detected",
@@ -129,6 +139,62 @@ def handler(event, context):
             "session_id": session_id,
         },
     )
+
+    # Only stop the session if Claude is NOT running. The stop refreshes the
+    # maxLifetime budget (40 min) for the upcoming invocation. If Claude is
+    # running, we skip entirely (no stop = don't kill the in-flight work).
+    if not claude_already_running:
+        try:
+            stop_runtime_session(session_id)
+            logger.info("session_stopped", extra={"session_id": session_id})
+        except Exception:
+            logger.exception(
+                "stop_runtime_session_non_fatal",
+                extra={"session_id": session_id},
+            )
+
+    # Write session record to DynamoDB (non-blocking: log and continue on failure)
+    try:
+        import sessions
+
+        repo_url = event.get("repo_url", "")
+        issue_url = f"{repo_url}/issues/{issue_number}" if repo_url else ""
+        sessions.write_session_record(
+            table_name=os.environ.get("SESSIONS_TABLE_NAME", ""),
+            session_id=session_id,
+            runtime_arn=strategy.runtime_arn,
+            assistant_type=assistant_type,
+            repo_owner=repo_owner,
+            repo_name=repo_name,
+            issue_number=issue_number,
+            issue_title=event.get("issue_title", ""),
+            triggered_by=triggered_by if triggered_by else "unknown",
+            is_reinvocation=is_reinvocation,
+            claude_session_uuid=claude_session_uuid,
+            issue_url=issue_url,
+            status="skipped_already_running" if claude_already_running else "started",
+        )
+        logger.info("session_record_written", extra={"session_id": session_id})
+    except Exception:
+        logger.exception("session_write_failed", extra={"session_id": session_id})
+
+    # If Claude is already running, skip the invocation entirely
+    if claude_already_running:
+        return {
+            "statusCode": 200,
+            "session_id": session_id,
+            "runtime_arn": strategy.runtime_arn,
+            "assistant_type": assistant_type,
+            "is_reinvocation": is_reinvocation,
+            "skipped": True,
+            "reason": "claude_already_running",
+            "issue": {
+                "repo_owner": repo_owner,
+                "repo_name": repo_name,
+                "issue_number": issue_number,
+                "issue_title": event.get("issue_title", ""),
+            },
+        }
 
     if is_reinvocation:
         # Re-invocation: fetch latest commits, refresh issue.json, rotate invocation dir.

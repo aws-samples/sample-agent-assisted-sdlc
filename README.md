@@ -119,6 +119,14 @@ Each source control platform provides:
 
 </details>
 
+### 5. Session Inspector (POC)
+
+A local-run TypeScript POC for observing in-flight sessions. Lists active sessions (last 10 minutes) from DynamoDB and provides a "Check Claude running" button to probe the runtime container's process table. Useful for debugging stalled agents and verifying session lifecycle behavior.
+
+- **Location:** [agentcore-sdlc-inspector/](./agentcore-sdlc-inspector/)
+- **How to run:** See [agentcore-sdlc-inspector/README.md](./agentcore-sdlc-inspector/README.md)
+- **POC posture:** Local-only, no deployment plumbing. Not included in CI.
+
 ## Quick Start
 
 > [!WARNING]
