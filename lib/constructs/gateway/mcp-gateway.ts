@@ -45,6 +45,22 @@ export class McpGateway extends Construct {
       ],
     }));
 
+    // Observability permissions for CloudWatch Logs Delivery and metrics
+    this.gatewayRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["bedrock-agentcore:AllowVendedLogDeliveryForResource"],
+      resources: ["*"],
+    }));
+
+    this.gatewayRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["cloudwatch:PutMetricData"],
+      resources: ["*"],
+      conditions: {
+        StringEquals: {
+          "cloudwatch:namespace": "bedrock-agentcore",
+        },
+      },
+    }));
+
     const createGateway = new cr.AwsCustomResource(this, "CreateGateway", {
       installLatestAwsSdk: true,
       onCreate: {
