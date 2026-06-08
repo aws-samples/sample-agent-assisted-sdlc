@@ -7,6 +7,7 @@
 
 export interface SessionRecord {
   session_id: string;
+  invocation_number: number;
   runtime_arn: string;
   assistant_type: string;
   repo_owner: string;
@@ -16,15 +17,16 @@ export interface SessionRecord {
   triggered_by: string;
   is_reinvocation: boolean;
   started_at: string;
-  last_event_at: string;
-  invocation_count: number;
   ttl: number;
   claude_session_uuid: string;
+  issue_url: string;
+  status: string;
 }
 
 export interface CheckClaudeRequest {
   session_id: string;
   runtime_arn: string;
+  claude_session_uuid?: string;
 }
 
 export interface CheckClaudeResponse {

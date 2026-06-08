@@ -10,11 +10,17 @@
  * - POST /api/check-claude
  */
 
+import { config } from "dotenv";
+import { resolve } from "path";
+config({ path: resolve(process.cwd(), ".env"), override: true });
+config({ path: resolve(process.cwd(), "..", ".env"), override: true });
 import express from "express";
 import cors from "cors";
 import pino from "pino";
 import { listSessions } from "./routes/sessions.js";
 import { checkClaude } from "./routes/check-claude.js";
+import { stopSession } from "./routes/stop-session.js";
+import { runtimeLifecycle } from "./routes/runtime-lifecycle.js";
 import type { HealthResponse } from "./types.js";
 
 const logger = pino();
@@ -47,6 +53,12 @@ app.get("/api/sessions", listSessions);
 
 // Check if Claude is running in a session
 app.post("/api/check-claude", checkClaude);
+
+// Stop a runtime session
+app.post("/api/stop-session", stopSession);
+
+// Get runtime lifecycle (uptime)
+app.post("/api/runtime-lifecycle", runtimeLifecycle);
 
 app.listen(port, () => {
   logger.info({ port, webPort }, "inspector_api_started");

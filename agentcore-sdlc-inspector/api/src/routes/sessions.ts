@@ -19,9 +19,14 @@ export async function listSessions(req: Request, res: Response): Promise<void> {
     return;
   }
 
+  logger.info({ tableName, region: process.env.AWS_REGION }, "scanning_table");
+
+  const parsed = parseInt(req.query.window as string);
+  const windowMinutes = Number.isNaN(parsed) ? 10 : parsed;
+
   try {
-    const sessions = await getRecentSessions(tableName, 10);
-    logger.info({ count: sessions.length }, "sessions_fetched");
+    const sessions = await getRecentSessions(tableName, windowMinutes);
+    logger.info({ count: sessions.length, windowMinutes }, "sessions_fetched");
     res.json(sessions);
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);

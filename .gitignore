@@ -261,3 +261,4 @@ cdk.context.json
 /settings.json
 /gateway-iam-proxy/
 /sdlc-config.yaml.bak
+agentcore-sdlc-inspector/cloudscape

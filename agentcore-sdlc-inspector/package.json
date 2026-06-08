@@ -4,6 +4,7 @@
   "private": true,
   "description": "Local inspector POC for observing in-flight AgentCore SDLC pipeline sessions",
   "scripts": {
+    "postinstall": "npm --prefix api install && npm --prefix web install",
     "dev": "npm-run-all --parallel dev:api dev:web",
     "dev:api": "npm --prefix api run dev",
     "dev:web": "npm --prefix web run dev"

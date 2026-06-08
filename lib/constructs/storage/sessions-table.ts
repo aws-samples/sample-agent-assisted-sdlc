@@ -20,10 +20,13 @@ export class SessionsTable extends Construct {
     super(scope, id);
 
     this.table = new dynamodb.Table(this, "Table", {
-      tableName: `${props.project}_sdlc_sessions`,
       partitionKey: {
         name: "session_id",
         type: dynamodb.AttributeType.STRING,
+      },
+      sortKey: {
+        name: "invocation_number",
+        type: dynamodb.AttributeType.NUMBER,
       },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
