@@ -59,7 +59,7 @@ export class RuntimeObservability extends Construct {
     // 1. RUNTIME — APPLICATION_LOGS
     // -------------------------------------------------------------------
 
-    const appLogGroup = new cdk.CfnResource(this, "AppLogGroup", {
+    const appLogGroup = new cdk.CfnResource(this, "ApplicationLogGroup", {
       type: "AWS::Logs::LogGroup",
       properties: {
         LogGroupName: `/aws/vendedlogs/bedrock-agentcore/runtime/APPLICATION_LOGS/${props.runtimeId}`,
@@ -69,7 +69,7 @@ export class RuntimeObservability extends Construct {
     });
     this.appLogGroupName = appLogGroup.ref;
 
-    const appSource = new cdk.CfnResource(this, "AppSource", {
+    const appSource = new cdk.CfnResource(this, "ApplicationLogsSource", {
       type: "AWS::Logs::DeliverySource",
       properties: {
         Name: `${shortId}-app-src`,
@@ -78,7 +78,7 @@ export class RuntimeObservability extends Construct {
       },
     });
 
-    const appDest = new cdk.CfnResource(this, "AppDestination", {
+    const appDest = new cdk.CfnResource(this, "ApplicationLogsDestination", {
       type: "AWS::Logs::DeliveryDestination",
       properties: {
         Name: `${shortId}-app-dst`,
@@ -87,7 +87,7 @@ export class RuntimeObservability extends Construct {
       },
     });
 
-    const appDelivery = new cdk.CfnResource(this, "AppDelivery", {
+    const appDelivery = new cdk.CfnResource(this, "ApplicationLogsDelivery", {
       type: "AWS::Logs::Delivery",
       properties: {
         DeliverySourceName: appSource.ref,
@@ -152,6 +152,7 @@ export class RuntimeObservability extends Construct {
 
     xrayDeliveryHandler.addToRolePolicy(new iam.PolicyStatement({
       actions: [
+        "logs:CreateLogGroup",
         "logs:PutDeliverySource",
         "logs:DeleteDeliverySource",
         "logs:PutDeliveryDestination",
@@ -192,6 +193,8 @@ export class RuntimeObservability extends Construct {
       properties: {
         RuntimeArn: props.runtimeArn,
         RuntimeId: props.runtimeId,
+        AccountId: stack.account,
+        EnableIdentity: enableIdentity ? "true" : "false",
       },
     });
 
@@ -200,22 +203,18 @@ export class RuntimeObservability extends Construct {
     // -------------------------------------------------------------------
 
     if (enableIdentity) {
-      const identityArn = `arn:aws:bedrock-agentcore:${stack.region}:${stack.account}:workload-identity-directory/default`;
+      const identityArn = `arn:aws:bedrock-agentcore:${stack.region}:${stack.account}:workload-identity-directory/default/workload-identity/${props.runtimeId}`;
 
-      const identityLogGroup = new cdk.CfnResource(this, "IdentityLogGroup", {
-        type: "AWS::Logs::LogGroup",
-        properties: {
-          LogGroupName: "/aws/vendedlogs/bedrock-agentcore/workload-identity-directory/APPLICATION_LOGS/default",
-          RetentionInDays: retentionDays,
-          LogGroupClass: "STANDARD",
-        },
-      });
-      this.identityLogGroupName = identityLogGroup.ref;
+      // The identity log group is shared across all runtimes in the account.
+      // Reference it by ARN rather than creating it — it may already exist
+      // from another runtime or from console-based setup.
+      const identityLogGroupArn = `arn:aws:logs:${stack.region}:${stack.account}:log-group:/aws/vendedlogs/bedrock-agentcore/workload-identity-directory/APPLICATION_LOGS/default`;
+      this.identityLogGroupName = "/aws/vendedlogs/bedrock-agentcore/workload-identity-directory/APPLICATION_LOGS/default";
 
       const identitySource = new cdk.CfnResource(this, "IdentitySource", {
         type: "AWS::Logs::DeliverySource",
         properties: {
-          Name: "identity-default-app-src",
+          Name: `${shortId}-id-src`,
           LogType: "APPLICATION_LOGS",
           ResourceArn: identityArn,
         },
@@ -224,9 +223,9 @@ export class RuntimeObservability extends Construct {
       const identityDest = new cdk.CfnResource(this, "IdentityDestination", {
         type: "AWS::Logs::DeliveryDestination",
         properties: {
-          Name: "identity-default-app-dst",
+          Name: `${shortId}-id-dst`,
           DeliveryDestinationType: "CWL",
-          DestinationResourceArn: identityLogGroup.getAtt("Arn").toString(),
+          DestinationResourceArn: identityLogGroupArn,
         },
       });
 

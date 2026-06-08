@@ -1,13 +1,17 @@
 # Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
 # SPDX-License-Identifier: Apache-2.0
 
-"""Custom resource handler for CloudWatch Logs X-Ray traces delivery.
+"""Custom resource handler for X-Ray traces delivery (Runtime + Identity).
 
-Manages the CloudWatch Logs Delivery API lifecycle for X-Ray traces delivery,
-which is not supported by declarative CloudFormation. Handles Create/Update/Delete
-lifecycle with idempotent cleanup on ResourceNotFoundException.
+Manages CloudWatch Logs Delivery API lifecycle for X-Ray traces on both:
+  - Runtime: TRACES delivery source using the runtime ARN
+  - Identity: TRACES delivery source using the workload-identity ARN
+
+Both share a single X-Ray delivery destination. Handles Create/Update/Delete
+with idempotent cleanup.
 """
 
+import json
 import logging
 import os
 from typing import Any, Dict
@@ -19,150 +23,157 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
+def _delete_resource(logs_client, delete_fn, identifier, label):
+    """Delete a delivery resource, ignoring ResourceNotFoundException."""
+    try:
+        delete_fn(**identifier)
+        logger.info(f"deleted_{label}", extra=identifier)
+    except botocore.exceptions.ClientError as e:
+        if e.response["Error"]["Code"] == "ResourceNotFoundException":
+            logger.info(f"{label}_already_deleted", extra=identifier)
+        else:
+            raise
+
+
 def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
-    """CloudFormation custom resource handler for X-Ray delivery.
-
-    Creates CloudWatch Logs delivery sources, destinations, and delivery
-    resources for X-Ray traces. Delete operations are idempotent and handle
-    ResourceNotFoundException gracefully.
-
-    Args:
-        event: CloudFormation custom resource event containing RequestType,
-               ResourceProperties with RuntimeArn and RuntimeId.
-        context: Lambda context object.
-
-    Returns:
-        Response dict with PhysicalResourceId and optional Data fields.
-    """
+    """CloudFormation custom resource handler for X-Ray delivery."""
     request_type = event["RequestType"]
-    runtime_arn = event["ResourceProperties"]["RuntimeArn"]
-    runtime_id = event["ResourceProperties"]["RuntimeId"]
+    props = event["ResourceProperties"]
+    runtime_arn = props["RuntimeArn"]
+    runtime_id = props["RuntimeId"]
+    enable_identity = props.get("EnableIdentity", "true") == "true"
+    account_id = props["AccountId"]
+    region = os.environ.get("AWS_REGION", "us-west-2")
 
     logger.info(
         "xray_delivery_handler",
         extra={
             "request_type": request_type,
             "runtime_id": runtime_id,
-            "runtime_arn": runtime_arn,
+            "enable_identity": enable_identity,
         },
     )
 
-    region = os.environ.get("AWS_REGION", "us-west-2")
     logs_client = boto3.client("logs", region_name=region)
+    short_id = runtime_id[:49]
 
-    source_name = f"{runtime_id[:49]}-xray-src"
-    destination_name = f"{runtime_id[:49]}-xray-dst"
+    # Runtime traces
+    rt_src_name = f"{short_id}-xray-src"
+    rt_dst_name = f"{short_id}-xray-dst"
+
+    # Identity traces
+    id_src_name = f"{short_id}-idxr-src"
+    id_dst_name = f"{short_id}-idxr-dst"
+    identity_arn = f"arn:aws:bedrock-agentcore:{region}:{account_id}:workload-identity-directory/default/workload-identity/{runtime_id}"
 
     try:
         if request_type == "Create":
-            # Create delivery source for TRACES
+            delivery_ids = []
+
+            # Ensure shared identity log group exists (idempotent)
+            if enable_identity:
+                identity_log_group = "/aws/vendedlogs/bedrock-agentcore/workload-identity-directory/APPLICATION_LOGS/default"
+                try:
+                    logs_client.create_log_group(logGroupName=identity_log_group)
+                    logger.info(
+                        "created_identity_log_group",
+                        extra={"log_group": identity_log_group},
+                    )
+                except botocore.exceptions.ClientError as e:
+                    if e.response["Error"]["Code"] == "ResourceAlreadyExistsException":
+                        logger.info(
+                            "identity_log_group_exists",
+                            extra={"log_group": identity_log_group},
+                        )
+                    else:
+                        raise
+
+            # --- Runtime TRACES ---
             logs_client.put_delivery_source(
-                name=source_name,
-                logType="TRACES",
-                resourceArn=runtime_arn,
+                name=rt_src_name, logType="TRACES", resourceArn=runtime_arn
             )
+            rt_dst_resp = logs_client.put_delivery_destination(
+                name=rt_dst_name, deliveryDestinationType="XRAY"
+            )
+            rt_delivery = logs_client.create_delivery(
+                deliverySourceName=rt_src_name,
+                deliveryDestinationArn=rt_dst_resp["deliveryDestination"]["arn"],
+            )
+            delivery_ids.append(rt_delivery["delivery"]["id"])
             logger.info(
-                "created_delivery_source",
-                extra={"source_name": source_name, "log_type": "TRACES"},
+                "runtime_traces_created", extra={"delivery_id": delivery_ids[-1]}
             )
 
-            # Create delivery destination for X-Ray
-            # Note: X-Ray delivery destinations don't have a specific resource ARN
-            dest_response = logs_client.put_delivery_destination(
-                name=destination_name,
-                deliveryDestinationType="XRAY",
-            )
-            destination_arn = dest_response["deliveryDestination"]["arn"]
-            logger.info(
-                "created_delivery_destination",
-                extra={
-                    "destination_name": destination_name,
-                    "destination_type": "XRAY",
-                    "destination_arn": destination_arn,
-                },
-            )
+            # --- Identity TRACES ---
+            if enable_identity:
+                logs_client.put_delivery_source(
+                    name=id_src_name, logType="TRACES", resourceArn=identity_arn
+                )
+                id_dst_resp = logs_client.put_delivery_destination(
+                    name=id_dst_name, deliveryDestinationType="XRAY"
+                )
+                id_delivery = logs_client.create_delivery(
+                    deliverySourceName=id_src_name,
+                    deliveryDestinationArn=id_dst_resp["deliveryDestination"]["arn"],
+                )
+                delivery_ids.append(id_delivery["delivery"]["id"])
+                logger.info(
+                    "identity_traces_created", extra={"delivery_id": delivery_ids[-1]}
+                )
 
-            # Create delivery linking source to destination
-            delivery_response = logs_client.create_delivery(
-                deliverySourceName=source_name,
-                deliveryDestinationArn=destination_arn,
-            )
-            delivery_id = delivery_response["delivery"]["id"]
-            logger.info(
-                "created_delivery",
-                extra={"delivery_id": delivery_id},
-            )
-
+            physical_id = json.dumps(delivery_ids)
             return {
-                "PhysicalResourceId": delivery_id,
-                "Data": {
-                    "DeliveryId": delivery_id,
-                    "SourceName": source_name,
-                    "DestinationName": destination_name,
-                },
+                "PhysicalResourceId": physical_id,
+                "Data": {"DeliveryIds": physical_id},
             }
 
         elif request_type == "Update":
-            # X-Ray delivery is immutable — no-op on update
-            physical_resource_id = event.get("PhysicalResourceId", "no-id")
-            logger.info(
-                "update_noop",
-                extra={"physical_resource_id": physical_resource_id},
-            )
-            return {"PhysicalResourceId": physical_resource_id}
+            return {"PhysicalResourceId": event.get("PhysicalResourceId", "no-id")}
 
         elif request_type == "Delete":
-            delivery_id = event.get("PhysicalResourceId", "")
-
-            # Delete delivery (idempotent)
+            # Parse delivery IDs from physical resource ID
+            physical_id = event.get("PhysicalResourceId", "[]")
             try:
-                logs_client.delete_delivery(id=delivery_id)
-                logger.info(
-                    "deleted_delivery",
-                    extra={"delivery_id": delivery_id},
-                )
-            except botocore.exceptions.ClientError as e:
-                if e.response["Error"]["Code"] == "ResourceNotFoundException":
-                    logger.info(
-                        "delivery_already_deleted",
-                        extra={"delivery_id": delivery_id},
-                    )
-                else:
-                    raise
+                delivery_ids = json.loads(physical_id)
+            except (json.JSONDecodeError, TypeError):
+                delivery_ids = [physical_id] if physical_id else []
 
-            # Delete delivery source (idempotent)
-            try:
-                logs_client.delete_delivery_source(name=source_name)
-                logger.info(
-                    "deleted_delivery_source",
-                    extra={"source_name": source_name},
+            # Delete deliveries
+            for did in delivery_ids:
+                _delete_resource(
+                    logs_client, logs_client.delete_delivery, {"id": did}, "delivery"
                 )
-            except botocore.exceptions.ClientError as e:
-                if e.response["Error"]["Code"] == "ResourceNotFoundException":
-                    logger.info(
-                        "delivery_source_already_deleted",
-                        extra={"source_name": source_name},
-                    )
-                else:
-                    raise
 
-            # Delete delivery destination (idempotent)
-            try:
-                logs_client.delete_delivery_destination(name=destination_name)
-                logger.info(
-                    "deleted_delivery_destination",
-                    extra={"destination_name": destination_name},
+            # Delete runtime traces source/destination
+            _delete_resource(
+                logs_client,
+                logs_client.delete_delivery_source,
+                {"name": rt_src_name},
+                "rt_source",
+            )
+            _delete_resource(
+                logs_client,
+                logs_client.delete_delivery_destination,
+                {"name": rt_dst_name},
+                "rt_destination",
+            )
+
+            # Delete identity traces source/destination
+            if enable_identity:
+                _delete_resource(
+                    logs_client,
+                    logs_client.delete_delivery_source,
+                    {"name": id_src_name},
+                    "id_source",
                 )
-            except botocore.exceptions.ClientError as e:
-                if e.response["Error"]["Code"] == "ResourceNotFoundException":
-                    logger.info(
-                        "delivery_destination_already_deleted",
-                        extra={"destination_name": destination_name},
-                    )
-                else:
-                    raise
+                _delete_resource(
+                    logs_client,
+                    logs_client.delete_delivery_destination,
+                    {"name": id_dst_name},
+                    "id_destination",
+                )
 
-            return {"PhysicalResourceId": delivery_id}
+            return {"PhysicalResourceId": physical_id}
 
         else:
             raise ValueError(f"Unexpected request type: {request_type}")
