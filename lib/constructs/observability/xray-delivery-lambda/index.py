@@ -64,7 +64,10 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     # Identity traces
     id_src_name = f"{short_id}-idxr-src"
     id_dst_name = f"{short_id}-idxr-dst"
-    identity_arn = f"arn:aws:bedrock-agentcore:{region}:{account_id}:workload-identity-directory/default/workload-identity/{runtime_id}"
+    identity_arn = (
+        f"arn:aws:bedrock-agentcore:{region}:{account_id}"
+        f":workload-identity-directory/default/workload-identity/{runtime_id}"
+    )
 
     try:
         if request_type == "Create":
@@ -72,7 +75,10 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
 
             # Ensure shared identity log group exists (idempotent)
             if enable_identity:
-                identity_log_group = "/aws/vendedlogs/bedrock-agentcore/workload-identity-directory/APPLICATION_LOGS/default"
+                identity_log_group = (
+                    "/aws/vendedlogs/bedrock-agentcore"
+                    "/workload-identity-directory/APPLICATION_LOGS/default"
+                )
                 try:
                     logs_client.create_log_group(logGroupName=identity_log_group)
                     logger.info(
