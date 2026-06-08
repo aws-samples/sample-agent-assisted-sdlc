@@ -119,15 +119,17 @@ def handler(event, context):
     claude_already_running = False
     if is_reinvocation:
         probe_cmd = (
-            f'sh -c \'for p in $(ls /proc/ 2>/dev/null | grep -E "^[0-9]+$"); do '
-            f"[ -r /proc/$p/cmdline ] || continue; "
-            f'cmd=$(tr "\\0" " " < /proc/$p/cmdline); '
-            f'case "$cmd" in sh*|bash*) continue ;; *claude*{claude_session_uuid}*) echo RUNNING; exit 0 ;; esac; '
-            f"done; echo NOT_RUNNING'"
+            'sh -c \'for p in $(ls /proc/ 2>/dev/null | grep -E "^[0-9]+$"); do '
+            "[ -r /proc/$p/cmdline ] || continue; "
+            'cmd=$(tr "\\0" " " < /proc/$p/cmdline); '
+            'case "$cmd" in '
+            "claude\\ *|claude) echo RUNNING; exit 0 ;; "
+            "esac; done; echo NOT_RUNNING'"
         )
         try:
             probe_result = execute_command(session_id, probe_cmd, timeout=10)
-            if "RUNNING" in probe_result.get("stdout", ""):
+            probe_stdout = probe_result.get("stdout", "").strip()
+            if probe_stdout == "RUNNING":
                 claude_already_running = True
                 logger.info(
                     "claude_already_running",
