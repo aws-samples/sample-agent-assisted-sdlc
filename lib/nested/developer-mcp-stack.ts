@@ -4,6 +4,7 @@ import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
 import { McpServer } from "../constructs/runtime/mcp-server";
+import { RuntimeObservability } from "../constructs/observability/runtime-observability";
 import { SdlcConfig } from "../config";
 
 export interface DeveloperMcpStackProps extends cdk.StackProps {
@@ -27,6 +28,12 @@ export class DeveloperMcpStack extends cdk.Stack {
         vpc,
         securityGroup,
         protocol: "MCP",
+      });
+
+      new RuntimeObservability(this, `Observability${serverConfig.name}`, {
+        runtimeArn: server.runtimeArn,
+        runtimeId: server.runtimeId,
+        logRetentionDays: 30,
       });
 
       this.runtimes.push({
