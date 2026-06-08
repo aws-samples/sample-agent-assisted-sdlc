@@ -50,8 +50,8 @@ def handler(event: Dict[str, Any], context: Any) -> Dict[str, Any]:
     region = os.environ.get("AWS_REGION", "us-west-2")
     logs_client = boto3.client("logs", region_name=region)
 
-    source_name = f"{runtime_id}-xray-traces-source"
-    destination_name = f"{runtime_id}-xray-traces-destination"
+    source_name = f"{runtime_id[:49]}-xray-src"
+    destination_name = f"{runtime_id[:49]}-xray-dst"
 
     try:
         if request_type == "Create":

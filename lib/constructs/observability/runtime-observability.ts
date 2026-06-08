@@ -19,82 +19,130 @@ export interface RuntimeObservabilityProps {
   runtimeId: string;
 
   /**
-   * Number of days to retain CloudWatch Logs application logs.
+   * Number of days to retain CloudWatch Logs.
    * @default 30
    */
   logRetentionDays?: number;
+
+  /**
+   * Whether to enable Identity (workload-identity-directory) log delivery.
+   * @default true
+   */
+  enableIdentityLogs?: boolean;
 }
 
 /**
  * Reusable construct for AgentCore runtime observability delivery.
  *
- * Sets up CloudWatch Logs delivery for APPLICATION_LOGS (declarative CFN)
- * and X-Ray traces delivery (custom resource Lambda). The construct is
- * generic and can be applied to any AgentCore runtime by passing the
- * runtime ARN and ID.
+ * Sets up four log delivery pipelines:
+ *   Runtime tab:
+ *     1. APPLICATION_LOGS → CloudWatch Logs
+ *     2. USAGE_LOGS → CloudWatch Logs
+ *     3. TRACES → X-Ray (custom resource, CFN doesn't support XRAY destination)
+ *   Identity tab:
+ *     4. APPLICATION_LOGS (workload-identity-directory) → CloudWatch Logs
  */
 export class RuntimeObservability extends Construct {
-  /**
-   * CloudWatch log group name for application logs.
-   */
-  public readonly logGroupName: string;
+  public readonly appLogGroupName: string;
+  public readonly usageLogGroupName: string;
+  public readonly identityLogGroupName: string;
 
   constructor(scope: Construct, id: string, props: RuntimeObservabilityProps) {
     super(scope, id);
 
+    const stack = cdk.Stack.of(this);
     const retentionDays = props.logRetentionDays ?? 30;
+    const shortId = props.runtimeId.substring(0, 49);
+    const enableIdentity = props.enableIdentityLogs ?? true;
 
     // -------------------------------------------------------------------
-    // APPLICATION LOGS (Declarative CloudFormation Resources)
+    // 1. RUNTIME — APPLICATION_LOGS
     // -------------------------------------------------------------------
 
-    // CloudWatch LogGroup for vended logs
-    const logGroup = new cdk.CfnResource(this, "ApplicationLogGroup", {
+    const appLogGroup = new cdk.CfnResource(this, "AppLogGroup", {
       type: "AWS::Logs::LogGroup",
       properties: {
-        LogGroupName: `/aws/vendedlogs/bedrock-agentcore/${props.runtimeId}`,
+        LogGroupName: `/aws/vendedlogs/bedrock-agentcore/runtime/APPLICATION_LOGS/${props.runtimeId}`,
         RetentionInDays: retentionDays,
         LogGroupClass: "STANDARD",
       },
     });
-    this.logGroupName = logGroup.ref;
+    this.appLogGroupName = appLogGroup.ref;
 
-    // Delivery source for APPLICATION_LOGS
-    const deliverySource = new cdk.CfnResource(this, "ApplicationLogsSource", {
+    const appSource = new cdk.CfnResource(this, "AppSource", {
       type: "AWS::Logs::DeliverySource",
       properties: {
-        Name: `${props.runtimeId}-application-logs-source`,
+        Name: `${shortId}-app-src`,
         LogType: "APPLICATION_LOGS",
         ResourceArn: props.runtimeArn,
       },
     });
 
-    // Delivery destination pointing to CloudWatch Logs
-    const deliveryDestination = new cdk.CfnResource(this, "ApplicationLogsDestination", {
+    const appDest = new cdk.CfnResource(this, "AppDestination", {
       type: "AWS::Logs::DeliveryDestination",
       properties: {
-        Name: `${props.runtimeId}-application-logs-destination`,
+        Name: `${shortId}-app-dst`,
         DeliveryDestinationType: "CWL",
-        DestinationResourceArn: logGroup.getAtt("Arn").toString(),
+        DestinationResourceArn: appLogGroup.getAtt("Arn").toString(),
       },
     });
 
-    // Delivery linking source to destination
-    const delivery = new cdk.CfnResource(this, "ApplicationLogsDelivery", {
+    const appDelivery = new cdk.CfnResource(this, "AppDelivery", {
       type: "AWS::Logs::Delivery",
       properties: {
-        DeliverySourceName: deliverySource.ref,
-        DeliveryDestinationArn: deliveryDestination.getAtt("Arn").toString(),
+        DeliverySourceName: appSource.ref,
+        DeliveryDestinationArn: appDest.getAtt("Arn").toString(),
       },
     });
-    delivery.addDependency(deliverySource);
-    delivery.addDependency(deliveryDestination);
+    appDelivery.addDependency(appSource);
+    appDelivery.addDependency(appDest);
 
     // -------------------------------------------------------------------
-    // X-RAY TRACES (Custom Resource Lambda)
+    // 2. RUNTIME — USAGE_LOGS
     // -------------------------------------------------------------------
 
-    // Lambda function for X-Ray delivery management
+    const usageLogGroup = new cdk.CfnResource(this, "UsageLogGroup", {
+      type: "AWS::Logs::LogGroup",
+      properties: {
+        LogGroupName: `/aws/vendedlogs/bedrock-agentcore/runtime/USAGE_LOGS/${props.runtimeId}`,
+        RetentionInDays: retentionDays,
+        LogGroupClass: "STANDARD",
+      },
+    });
+    this.usageLogGroupName = usageLogGroup.ref;
+
+    const usageSource = new cdk.CfnResource(this, "UsageSource", {
+      type: "AWS::Logs::DeliverySource",
+      properties: {
+        Name: `${shortId}-usg-src`,
+        LogType: "USAGE_LOGS",
+        ResourceArn: props.runtimeArn,
+      },
+    });
+
+    const usageDest = new cdk.CfnResource(this, "UsageDestination", {
+      type: "AWS::Logs::DeliveryDestination",
+      properties: {
+        Name: `${shortId}-usg-dst`,
+        DeliveryDestinationType: "CWL",
+        DestinationResourceArn: usageLogGroup.getAtt("Arn").toString(),
+      },
+    });
+
+    const usageDelivery = new cdk.CfnResource(this, "UsageDelivery", {
+      type: "AWS::Logs::Delivery",
+      properties: {
+        DeliverySourceName: usageSource.ref,
+        DeliveryDestinationArn: usageDest.getAtt("Arn").toString(),
+      },
+    });
+    usageDelivery.addDependency(usageSource);
+    usageDelivery.addDependency(usageDest);
+
+    // -------------------------------------------------------------------
+    // 3. RUNTIME — X-RAY TRACES (Custom Resource)
+    // -------------------------------------------------------------------
+
     const xrayDeliveryHandler = new lambda.Function(this, "XRayDeliveryHandler", {
       runtime: lambda.Runtime.PYTHON_3_12,
       handler: "index.handler",
@@ -102,7 +150,6 @@ export class RuntimeObservability extends Construct {
       timeout: cdk.Duration.minutes(5),
     });
 
-    // IAM permissions for CloudWatch Logs Delivery API and X-Ray
     xrayDeliveryHandler.addToRolePolicy(new iam.PolicyStatement({
       actions: [
         "logs:PutDeliverySource",
@@ -116,21 +163,15 @@ export class RuntimeObservability extends Construct {
     }));
 
     xrayDeliveryHandler.addToRolePolicy(new iam.PolicyStatement({
-      actions: [
-        "bedrock-agentcore:AllowVendedLogDeliveryForResource",
-      ],
+      actions: ["bedrock-agentcore:AllowVendedLogDeliveryForResource"],
       resources: ["*"],
     }));
 
     xrayDeliveryHandler.addToRolePolicy(new iam.PolicyStatement({
-      actions: [
-        "xray:PutResourcePolicy",
-        "xray:ListResourcePolicies",
-      ],
+      actions: ["xray:PutResourcePolicy", "xray:ListResourcePolicies"],
       resources: ["*"],
     }));
 
-    // Suppress cdk-nag warnings for Lambda role wildcard resources
     NagSuppressions.addResourceSuppressions(
       xrayDeliveryHandler.role!,
       [
@@ -142,18 +183,62 @@ export class RuntimeObservability extends Construct {
       true,
     );
 
-    // Custom resource provider (single onEvent handler, no isComplete needed)
     const xrayDeliveryProvider = new cr.Provider(this, "XRayDeliveryProvider", {
       onEventHandler: xrayDeliveryHandler,
     });
 
-    // Custom resource for X-Ray traces delivery
-    const xrayDelivery = new cdk.CustomResource(this, "XRayTracesDelivery", {
+    new cdk.CustomResource(this, "XRayTracesDelivery", {
       serviceToken: xrayDeliveryProvider.serviceToken,
       properties: {
         RuntimeArn: props.runtimeArn,
         RuntimeId: props.runtimeId,
       },
     });
+
+    // -------------------------------------------------------------------
+    // 4. IDENTITY — APPLICATION_LOGS (workload-identity-directory)
+    // -------------------------------------------------------------------
+
+    if (enableIdentity) {
+      const identityArn = `arn:aws:bedrock-agentcore:${stack.region}:${stack.account}:workload-identity-directory/default`;
+
+      const identityLogGroup = new cdk.CfnResource(this, "IdentityLogGroup", {
+        type: "AWS::Logs::LogGroup",
+        properties: {
+          LogGroupName: "/aws/vendedlogs/bedrock-agentcore/workload-identity-directory/APPLICATION_LOGS/default",
+          RetentionInDays: retentionDays,
+          LogGroupClass: "STANDARD",
+        },
+      });
+      this.identityLogGroupName = identityLogGroup.ref;
+
+      const identitySource = new cdk.CfnResource(this, "IdentitySource", {
+        type: "AWS::Logs::DeliverySource",
+        properties: {
+          Name: "identity-default-app-src",
+          LogType: "APPLICATION_LOGS",
+          ResourceArn: identityArn,
+        },
+      });
+
+      const identityDest = new cdk.CfnResource(this, "IdentityDestination", {
+        type: "AWS::Logs::DeliveryDestination",
+        properties: {
+          Name: "identity-default-app-dst",
+          DeliveryDestinationType: "CWL",
+          DestinationResourceArn: identityLogGroup.getAtt("Arn").toString(),
+        },
+      });
+
+      const identityDelivery = new cdk.CfnResource(this, "IdentityDelivery", {
+        type: "AWS::Logs::Delivery",
+        properties: {
+          DeliverySourceName: identitySource.ref,
+          DeliveryDestinationArn: identityDest.getAtt("Arn").toString(),
+        },
+      });
+      identityDelivery.addDependency(identitySource);
+      identityDelivery.addDependency(identityDest);
+    }
   }
 }
