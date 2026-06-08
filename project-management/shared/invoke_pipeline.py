@@ -27,6 +27,22 @@ def handler(event, context):
     """Pipeline Lambda — runs the full SDLC pipeline inside the runtime."""
     logger.info("event_received", extra={"event": redact(event)})
 
+    # Skip if Setup Lambda determined Claude is already running
+    if event.get("skipped"):
+        logger.info(
+            "pipeline_skipped",
+            extra={
+                "reason": event.get("reason", "unknown"),
+                "session_id": event.get("session_id"),
+            },
+        )
+        return {
+            "statusCode": 200,
+            "session_id": event.get("session_id", ""),
+            "skipped": True,
+            "reason": event.get("reason", "unknown"),
+        }
+
     session_id = event["session_id"]
     assistant_type = event.get("assistant_type", "claude-code")
     issue = event["issue"]

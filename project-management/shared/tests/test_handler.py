@@ -398,3 +398,144 @@ class TestReinvocation:
             mock_strategy.refresh_for_reinvocation.assert_called_once()
             kwargs = mock_strategy.refresh_for_reinvocation.call_args.kwargs
             assert kwargs.get("token") is None
+
+
+class TestSessionTracking:
+    """Tests for DynamoDB session tracking writes in index.handler."""
+
+    @patch("index.get_token", return_value=None)
+    @patch("index.STRATEGIES")
+    def test_session_write_on_first_invocation(self, mock_strategies, mock_token, monkeypatch):
+        """First invocation writes session record with is_reinvocation=False."""
+        monkeypatch.setenv("ALLOWED_USERS", json.dumps(["*"]))
+        monkeypatch.setenv("ALLOWED_REPOS", json.dumps([]))
+        monkeypatch.setenv("SESSIONS_TABLE_NAME", "test_sessions_table")
+
+        mock_strategy = MagicMock()
+        mock_strategy.get_session_id.return_value = "session-123456789012345678901"
+        mock_strategy.runtime_arn = "arn:aws:bedrock-agentcore:us-west-2:123:runtime/test"
+        mock_strategy.clone_repo.return_value = {"exitCode": 0, "stdout": "OK", "stderr": ""}
+        mock_strategy.setup_workspace.return_value = {"exitCode": 0, "stdout": "OK", "stderr": ""}
+        mock_strategies.__getitem__.return_value = lambda: mock_strategy
+        mock_strategies.__contains__.return_value = True
+
+        import importlib
+
+        import index
+
+        importlib.reload(index)
+
+        with (
+            patch.object(
+                index,
+                "execute_command",
+                return_value={"exitCode": 0, "stdout": "FIRST\n", "stderr": ""},
+            ),
+            patch.object(index, "stop_runtime_session"),
+            patch("index.sessions.write_session_record") as mock_write,
+        ):
+            result = index.handler(make_event(triggered_by="alice"), None)
+
+            assert result["statusCode"] == 200
+            assert result["is_reinvocation"] is False
+
+            # write_session_record called exactly once
+            mock_write.assert_called_once()
+            call_args = mock_write.call_args.kwargs
+
+            assert call_args["table_name"] == "test_sessions_table"
+            assert call_args["session_id"] == "session-123456789012345678901"
+            assert call_args["runtime_arn"] == "arn:aws:bedrock-agentcore:us-west-2:123:runtime/test"
+            assert call_args["assistant_type"] == "claude-code"
+            assert call_args["repo_owner"] == "myorg"
+            assert call_args["repo_name"] == "myrepo"
+            assert call_args["issue_number"] == 1
+            assert call_args["issue_title"] == "test"
+            assert call_args["triggered_by"] == "alice"
+            assert call_args["is_reinvocation"] is False
+            # Verify claude_session_uuid is a valid UUID string
+            assert len(call_args["claude_session_uuid"]) == 36
+            assert call_args["claude_session_uuid"].count("-") == 4
+
+    @patch("index.get_token", return_value=None)
+    @patch("index.STRATEGIES")
+    def test_session_write_on_reinvocation(self, mock_strategies, mock_token, monkeypatch):
+        """Re-invocation writes session record with is_reinvocation=True."""
+        monkeypatch.setenv("ALLOWED_USERS", json.dumps(["*"]))
+        monkeypatch.setenv("ALLOWED_REPOS", json.dumps([]))
+        monkeypatch.setenv("SESSIONS_TABLE_NAME", "test_sessions_table")
+
+        mock_strategy = MagicMock()
+        mock_strategy.get_session_id.return_value = "session-123456789012345678901"
+        mock_strategy.runtime_arn = "arn:aws:bedrock-agentcore:us-west-2:123:runtime/test"
+        mock_strategy.refresh_for_reinvocation.return_value = {"exitCode": 0, "stdout": "OK", "stderr": ""}
+        mock_strategies.__getitem__.return_value = lambda: mock_strategy
+        mock_strategies.__contains__.return_value = True
+
+        import importlib
+
+        import index
+
+        importlib.reload(index)
+
+        with (
+            patch.object(
+                index,
+                "execute_command",
+                return_value={"exitCode": 0, "stdout": "REINVOKE\n", "stderr": ""},
+            ),
+            patch.object(index, "stop_runtime_session"),
+            patch("index.sessions.write_session_record") as mock_write,
+        ):
+            result = index.handler(make_event(triggered_by="bob"), None)
+
+            assert result["statusCode"] == 200
+            assert result["is_reinvocation"] is True
+
+            # write_session_record called exactly once with is_reinvocation=True
+            mock_write.assert_called_once()
+            call_args = mock_write.call_args.kwargs
+
+            assert call_args["is_reinvocation"] is True
+            assert call_args["triggered_by"] == "bob"
+
+    @patch("index.get_token", return_value=None)
+    @patch("index.STRATEGIES")
+    def test_session_write_failure_non_fatal(self, mock_strategies, mock_token, monkeypatch):
+        """Pipeline continues if session write fails (non-blocking)."""
+        monkeypatch.setenv("ALLOWED_USERS", json.dumps(["*"]))
+        monkeypatch.setenv("ALLOWED_REPOS", json.dumps([]))
+        monkeypatch.setenv("SESSIONS_TABLE_NAME", "test_sessions_table")
+
+        mock_strategy = MagicMock()
+        mock_strategy.get_session_id.return_value = "session-123456789012345678901"
+        mock_strategy.runtime_arn = "arn:aws:bedrock-agentcore:us-west-2:123:runtime/test"
+        mock_strategy.clone_repo.return_value = {"exitCode": 0, "stdout": "OK", "stderr": ""}
+        mock_strategy.setup_workspace.return_value = {"exitCode": 0, "stdout": "OK", "stderr": ""}
+        mock_strategies.__getitem__.return_value = lambda: mock_strategy
+        mock_strategies.__contains__.return_value = True
+
+        import importlib
+
+        import index
+
+        importlib.reload(index)
+
+        with (
+            patch.object(
+                index,
+                "execute_command",
+                return_value={"exitCode": 0, "stdout": "FIRST\n", "stderr": ""},
+            ),
+            patch.object(index, "stop_runtime_session"),
+            patch("index.sessions.write_session_record", side_effect=Exception("DDB write failed")),
+        ):
+            result = index.handler(make_event(triggered_by="alice"), None)
+
+            # Pipeline continues despite DDB write failure
+            assert result["statusCode"] == 200
+            assert result["is_reinvocation"] is False
+
+            # First-invocation hooks still ran
+            mock_strategy.clone_repo.assert_called_once()
+            mock_strategy.setup_workspace.assert_called_once()
