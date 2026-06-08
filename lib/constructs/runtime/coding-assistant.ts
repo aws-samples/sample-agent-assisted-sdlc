@@ -153,6 +153,20 @@ export class CodingAssistant extends Construct {
       ],
       resources: ["*"],
     }));
+
+    // Vended logs delivery permissions for AgentCore observability
+    this.executionRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["bedrock-agentcore:AllowVendedLogDeliveryForResource"],
+      resources: ["*"],
+    }));
+
+    this.executionRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["cloudwatch:PutMetricData"],
+      resources: ["*"],
+      conditions: {
+        StringEquals: { "cloudwatch:namespace": "bedrock-agentcore" },
+      },
+    }));
     this.executionRole.addToPolicy(new iam.PolicyStatement({
       actions: ["ecr:BatchCheckLayerAvailability", "ecr:BatchGetImage", "ecr:GetDownloadUrlForLayer"],
       resources: [repo.repositoryArn],

@@ -9,6 +9,7 @@ import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
 import { CodingAssistant } from "../constructs/runtime/coding-assistant";
+import { RuntimeObservability } from "../constructs/observability/runtime-observability";
 import { S3FilesStorage } from "../constructs/storage/s3-files";
 import { SdlcConfig, getAssistantDir } from "../config";
 
@@ -73,6 +74,13 @@ export class AssistantStack extends cdk.Stack {
       },
     });
     this.assistant.node.addDependency(storage);
+
+    // CloudWatch application logs + X-Ray traces observability
+    new RuntimeObservability(this, "Observability", {
+      runtimeArn: this.assistant.runtimeArn,
+      runtimeId: this.assistant.runtimeId,
+      logRetentionDays: 30,
+    });
 
     // Grant gateway invoke
     this.assistant.executionRole.addToPrincipalPolicy(new iam.PolicyStatement({
