@@ -97,35 +97,9 @@ def handler(event, context):
 
     claude_session_uuid = str(uuid.uuid5(uuid.NAMESPACE_DNS, session_id))
 
-    # Check if Claude is already running BEFORE stopping the session.
-    # If Claude is active, we skip the entire invocation (no stop, no re-setup).
-    # The probe runs against the existing microVM — if no microVM exists (first
-    # invocation), the probe command spawns one but won't find claude running.
-    claude_already_running = False
-    probe_cmd = (
-        f'sh -c \'for p in $(ls /proc/ 2>/dev/null | grep -E "^[0-9]+$"); do '
-        f"[ -r /proc/$p/cmdline ] || continue; "
-        f'cmd=$(tr "\\0" " " < /proc/$p/cmdline); '
-        f'case "$cmd" in sh*|bash*) continue ;; *claude*{claude_session_uuid}*) echo RUNNING; exit 0 ;; esac; '
-        f"done; echo NOT_RUNNING'"
-    )
-    try:
-        probe_result = execute_command(session_id, probe_cmd, timeout=10)
-        if "RUNNING" in probe_result.get("stdout", ""):
-            claude_already_running = True
-            logger.info(
-                "claude_already_running",
-                extra={
-                    "session_id": session_id,
-                    "claude_session_uuid": claude_session_uuid,
-                },
-            )
-    except Exception:
-        logger.exception(
-            "claude_running_check_failed", extra={"session_id": session_id}
-        )
-
-    # Detect re-invocation: check if invocation-1/ already exists in this session
+    # Detect re-invocation: check if invocation-1/ already exists in this session.
+    # This runs FIRST because the claude-running probe only makes sense on re-invocations
+    # (first invocations can't have Claude already running).
     check = execute_command(
         session_id,
         "sh -c 'test -d /mnt/workplace/gitproject/.dev-claude/invocation-1 && echo REINVOKE || echo FIRST'",
@@ -139,6 +113,33 @@ def handler(event, context):
             "session_id": session_id,
         },
     )
+
+    # Check if Claude is already running BEFORE stopping the session.
+    # Only on re-invocations — first invocations can't have a prior Claude process.
+    claude_already_running = False
+    if is_reinvocation:
+        probe_cmd = (
+            f'sh -c \'for p in $(ls /proc/ 2>/dev/null | grep -E "^[0-9]+$"); do '
+            f"[ -r /proc/$p/cmdline ] || continue; "
+            f'cmd=$(tr "\\0" " " < /proc/$p/cmdline); '
+            f'case "$cmd" in sh*|bash*) continue ;; *claude*{claude_session_uuid}*) echo RUNNING; exit 0 ;; esac; '
+            f"done; echo NOT_RUNNING'"
+        )
+        try:
+            probe_result = execute_command(session_id, probe_cmd, timeout=10)
+            if "RUNNING" in probe_result.get("stdout", ""):
+                claude_already_running = True
+                logger.info(
+                    "claude_already_running",
+                    extra={
+                        "session_id": session_id,
+                        "claude_session_uuid": claude_session_uuid,
+                    },
+                )
+        except Exception:
+            logger.exception(
+                "claude_running_check_failed", extra={"session_id": session_id}
+            )
 
     # Only stop the session if Claude is NOT running. The stop refreshes the
     # maxLifetime budget (40 min) for the upcoming invocation. If Claude is
