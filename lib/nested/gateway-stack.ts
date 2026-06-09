@@ -70,6 +70,7 @@ export class GatewayStack extends cdk.Stack {
     // Outputs for post-deploy policy attachment
     new cdk.CfnOutput(this, "PolicyEngineArn", { value: policyEngine.getAtt("PolicyEngineArn").toString() });
     new cdk.CfnOutput(this, "PolicyEngineId", { value: policyEngine.getAtt("PolicyEngineId").toString() });
+    new cdk.CfnOutput(this, "GatewayRoleArn", { value: this.gateway.gatewayRole.roleArn });
 
     NagSuppressions.addStackSuppressions(this, [
       { id: "AwsSolutions-IAM5", reason: "Gateway and custom resource policies use CDK-managed wildcard resources" },
