@@ -5,6 +5,7 @@ import { NagSuppressions } from "cdk-nag";
 import { Construct } from "constructs";
 
 import { McpServer } from "../constructs/runtime/mcp-server";
+import { RuntimeObservability } from "../constructs/observability/runtime-observability";
 import { SdlcConfig } from "../config";
 
 export interface ProjectManagementStackProps extends cdk.StackProps {
@@ -54,6 +55,12 @@ export class ProjectManagementStack extends cdk.Stack {
     });
 
     privateKeySecret.grantRead(mcp.executionRole);
+
+    new RuntimeObservability(this, "Observability", {
+      runtimeArn: mcp.runtimeArn,
+      runtimeId: mcp.runtimeId,
+      logRetentionDays: 30,
+    });
 
     this.runtimeArn = mcp.runtimeArn;
     this.executionRoleArn = (mcp.executionRole as any).roleArn;

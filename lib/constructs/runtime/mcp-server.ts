@@ -143,6 +143,20 @@ export class McpServer extends Construct {
       resources: ["*"],
     }));
 
+    // Vended logs delivery permissions for AgentCore observability
+    executionRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["bedrock-agentcore:AllowVendedLogDeliveryForResource"],
+      resources: ["*"],
+    }));
+
+    executionRole.addToPolicy(new iam.PolicyStatement({
+      actions: ["cloudwatch:PutMetricData"],
+      resources: ["*"],
+      conditions: {
+        StringEquals: { "cloudwatch:namespace": "bedrock-agentcore" },
+      },
+    }));
+
     NagSuppressions.addResourceSuppressions(buildProject, [
       { id: "AwsSolutions-CB4", reason: "Container image builds do not require KMS encryption" },
     ], true);
@@ -182,7 +196,7 @@ export class McpServer extends Construct {
     this.runtimeId = runtime.getAtt("AgentRuntimeId").toString();
 
     NagSuppressions.addResourceSuppressions(executionRole, [
-      { id: "AwsSolutions-IAM5", reason: "ECR and CloudWatch require wildcard resources" },
+      { id: "AwsSolutions-IAM5", reason: "ECR, CloudWatch, X-Ray, and AgentCore observability require wildcard resources" },
     ], true);
 
     new cdk.CfnOutput(scope, `${props.name}RuntimeArn`, { value: this.runtimeArn });
